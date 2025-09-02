@@ -6,10 +6,10 @@ from pathlib import Path
 # This is the final, robust version for both local and server environments.
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
-# Correct local path (nested, no "clinical")
+# Correct local path (nested)
 local_data_path = PROJECT_ROOT / 'data' / 'ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3' / 'ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3'
 
-# Correct server path (single-level, no "clinical")
+# Correct server path (single-level)
 server_data_path = '/workspace/ecg-classification-project/data/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3/'
 
 # Check for a "SERVER_ENV" environment variable to decide which path to use.
