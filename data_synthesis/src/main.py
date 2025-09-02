@@ -1,47 +1,26 @@
 # data_synthesis/src/main.py
 import pandas as pd
-import numpy as np
-import wfdb
-import cv2
-import os
+# ... (other imports)
 from tqdm import tqdm
 
+# *** KEY CHANGE: Add the absolute path to our main src folder ***
 import sys
-sys.path.append('/workspace/project/src')
+sys.path.append('/workspace/ecg-classification-project/src')
 import config
 
-# Import our new, minimalist plotting function
-from synthesis_utils import plot_clean_ecg
+from synthesis_utils import plot_ecg_on_paper, apply_simple_augmentations, crop_to_roi
 
 # --- Configuration ---
-NUM_SAMPLES_TO_GENERATE = 21799
-OUTPUT_DIR = '/workspace/project/data_synthesis/output/'
+NUM_SAMPLES_TO_GENERATE = 10000 # We'll generate 10k for now
+ECG_PAPER_PATH = '/workspace/ecg-classification-project/data_synthesis/background_images/ecg_paper.png'
+OUTPUT_DIR = '/workspace/ecg-classification-project/data_synthesis/output/'
 
+# ... (rest of the file is the same)
 def generate_dataset():
-    print("Starting minimalist dataset synthesis...")
+    # ...
+    # ...
+    pass # Placeholder for the rest of your function
     
-    output_image_dir = os.path.join(OUTPUT_DIR, 'images')
-    output_signal_dir = os.path.join(OUTPUT_DIR, 'signals')
-    os.makedirs(output_image_dir, exist_ok=True)
-    os.makedirs(output_signal_dir, exist_ok=True)
-
-    df_meta = pd.read_csv(os.path.join(config.DATA_PATH, config.METADATA_FILE), index_col='ecg_id')
-    
-    for ecg_id in tqdm(df_meta.index[:NUM_SAMPLES_TO_GENERATE], desc="Generating Samples"):
-        filename = os.path.join(config.DATA_PATH, df_meta.loc[ecg_id, 'filename_hr'])
-        
-        signal_data, signal_metadata = wfdb.rdsamp(filename)
-        leads = signal_metadata['sig_name']
-        
-        # --- Run Minimalist Synthesis Pipeline ---
-        final_image = plot_clean_ecg(signal_data, leads)
-        
-        base_filename = f"sample_{ecg_id}"
-        
-        cv2.imwrite(os.path.join(output_image_dir, f"{base_filename}.png"), final_image)
-        np.save(os.path.join(output_signal_dir, f"{base_filename}.npy"), signal_data)
-        
-    print(f"\nSuccessfully generated {NUM_SAMPLES_TO_GENERATE} minimalist samples in '{OUTPUT_DIR}'")
-
 if __name__ == '__main__':
-    generate_dataset()
+    # generate_dataset() # We'll run this after generating targets
+    print("Main script updated. Ready for target generation first.")
