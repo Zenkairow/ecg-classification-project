@@ -3,18 +3,22 @@ import os
 from pathlib import Path
 
 # --- Data Configuration ---
-# This is the final, robust version. It dynamically finds the project root
-# and constructs the correct absolute path to the DATA DIRECTORY.
-
+# This is the final, robust version.
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
-# This is the correct local path to the DIRECTORY containing the data
-local_data_path = PROJECT_ROOT / 'data' / 'ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3' / 'ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3'
+# Correct local path (nested)
+local_data_path = PROJECT_ROOT / 'data' / 'ptb-xl-a-large-publicly-available-clinical-electrocardiography-dataset-1.0.3' / 'ptb-xl-a-large-publicly-available-clinical-electrocardiography-dataset-1.0.3'
 
-# We will use the local path for now. The server logic can be added back if needed.
-DATA_PATH = str(local_data_path)
+# Correct server path (single-level)
+server_data_path = '/workspace/ecg-classification-project/data/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3/'
 
-METADATA_FILE = 'ptbxl_database.csv' # This is the FILENAME
+# Check for a "SERVER_ENV" environment variable to decide which path to use.
+if os.getenv('SERVER_ENV') == 'True':
+    DATA_PATH = server_data_path
+else:
+    DATA_PATH = str(local_data_path)
+
+METADATA_FILE = 'ptbxl_database.csv'
 SAMPLING_RATE = 500
 
 # --- Model Configuration ---
