@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-selfcheck.json
+
+# Docker
+.dockerignore
+docker-compose.yml
+
+# VS Code
+.vscode/
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# Data (NEVER commit large data files)
+data/
+data_synthesis/output/
+data_synthesis/background_images/
+
+# Environment variables
+.env
