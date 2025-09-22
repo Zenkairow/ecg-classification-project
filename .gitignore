@@ -26,5 +26,5 @@ data/
 
 # Ignore the large synthesized dataset
 data_synthesis/output/
-data_synthesis/background_images/
+
 data_synthesis/model_1_data/
