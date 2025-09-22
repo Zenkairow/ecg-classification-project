@@ -38,19 +38,21 @@ class UNetUp(nn.Module):
 
 class Generator(nn.Module):
     """The U-Net Generator for our Pix2Pix GAN."""
-    def __init__(self, in_channels=3, out_channels=1):
+    def __init__(self, in_channels=3, out_channels=3):
         super(Generator, self).__init__()
         self.down1 = UNetDown(in_channels, 64, normalize=False)
         self.down2 = UNetDown(64, 128)
         self.down3 = UNetDown(128, 256)
         self.down4 = UNetDown(256, 512, dropout=0.5)
-        # Add more downsampling layers for higher resolution images if needed
-        
-        self.up1 = UNetUp(512, 256)
-        self.up2 = UNetUp(512, 128) # Concatenated size
-        self.up3 = UNetUp(256, 64)  # Concatenated size
-        
-        # Final layer to produce the output
+        self.down5 = UNetDown(512, 512, dropout=0.5)
+        self.down6 = UNetDown(512, 512, dropout=0.5)
+
+        self.up1 = UNetUp(512, 512, dropout=0.5)
+        self.up2 = UNetUp(1024, 512, dropout=0.5)
+        self.up3 = UNetUp(1024, 256)
+        self.up4 = UNetUp(512, 128)
+        self.up5 = UNetUp(256, 64)
+
         self.final_up = nn.Sequential(
             nn.Upsample(scale_factor=2),
             nn.ZeroPad2d((1, 0, 1, 0)),
@@ -63,14 +65,18 @@ class Generator(nn.Module):
         d2 = self.down2(d1)
         d3 = self.down3(d2)
         d4 = self.down4(d3)
-        u1 = self.up1(d4, d3)
-        u2 = self.up2(u1, d2)
-        u3 = self.up3(u2, d1)
-        return self.final_up(u3)
+        d5 = self.down5(d4)
+        d6 = self.down6(d5)
+        u1 = self.up1(d6, d5)
+        u2 = self.up2(u1, d4)
+        u3 = self.up3(u2, d3)
+        u4 = self.up4(u3, d2)
+        u5 = self.up5(u4, d1)
+        return self.final_up(u5)
 
 class Discriminator(nn.Module):
     """The PatchGAN Discriminator."""
-    def __init__(self, in_channels=1): # Takes a single-channel signal image as input
+    def __init__(self, in_channels=6): # Takes input image + target/generated image
         super(Discriminator, self).__init__()
 
         def discriminator_block(in_filters, out_filters, normalization=True):
@@ -89,25 +95,26 @@ class Discriminator(nn.Module):
             nn.Conv2d(512, 1, 4, padding=1, bias=False)
         )
 
-    def forward(self, img):
-        return self.model(img)
+    def forward(self, img_A, img_B):
+        # Concatenate image and condition image by channels to produce input
+        img_input = torch.cat((img_A, img_B), 1)
+        return self.model(img_input)
 
 # --- Block for testing the model architectures ---
 if __name__ == '__main__':
-    # Create a dummy input image tensor
-    # batch_size=4, channels=3 (RGB), height=256, width=512
-    dummy_image = torch.randn(4, 3, 256, 512)
+    # Create a dummy input image and target image tensor
+    dummy_input_image = torch.randn(4, 3, 256, 512)
+    dummy_target_image = torch.randn(4, 3, 256, 512)
     
     # Create instances of the models
     generator = Generator()
     discriminator = Discriminator()
     
     print("--- Generator Architecture Test ---")
-    generated_signal_image = generator(dummy_image)
-    print(f"Input image shape: {dummy_image.shape}")
-    print(f"Generated signal image shape: {generated_signal_image.shape}") # Should have 1 channel
+    generated_image = generator(dummy_input_image)
+    print(f"Input image shape: {dummy_input_image.shape}")
+    print(f"Generated image shape: {generated_image.shape}")
     
     print("\n--- Discriminator Architecture Test ---")
-    discriminator_output = discriminator(generated_signal_image)
-    print(f"Discriminator input shape: {generated_signal_image.shape}")
+    discriminator_output = discriminator(dummy_input_image, generated_image)
     print(f"Discriminator output (patch) shape: {discriminator_output.shape}")
