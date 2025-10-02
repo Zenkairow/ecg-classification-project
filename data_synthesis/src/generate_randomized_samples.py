@@ -3,11 +3,10 @@ import random
 from PIL import Image, ImageFilter, ImageFile
 from tqdm import tqdm
 
-# Allows loading of potentially truncated image files to prevent errors
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # --- FINAL SERVER PATHS (RELATIVE TO PROJECT ROOT) ---
-SOURCE_PLOTS_DIR = 'output/targets/'
+SOURCE_PLOTS_DIR = 'data_synthesis/output/targets/'
 BACKGROUNDS_DIR = 'data_synthesis/background_images/'
 OUTPUT_DIR = 'model_1_generated_data/inputs_hyper_realistic/'
 
