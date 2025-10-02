@@ -1,84 +1,80 @@
 import os
 import random
-from PIL import Image
+from PIL import Image, ImageFilter
 from tqdm import tqdm
 from google.colab import drive
 
-# --- This cell should be run first in Colab ---
 # Mount Google Drive to make your files accessible
 drive.mount('/content/drive')
 
-# --- CONFIGURATION for Colab ---
-# IMPORTANT: Update this path to where you saved your plots in Google Drive
-DRIVE_BASE_PATH = '/content/drive/MyDrive/' # Assuming you save it in the main "My Drive" folder
-SOURCE_PLOTS_DIR = os.path.join(DRIVE_BASE_PATH, 'data_synthesis/clean_plots_with_grid/')
+# --- CONFIGURATION ---
+BASE_DRIVE_PATH = '/content/drive/Othercomputers/My Laptop/output'
+SOURCE_PLOTS_DIR = os.path.join(BASE_DRIVE_PATH, 'targets/')
+BACKGROUNDS_DIR = '/content/ecg-classification-project/data_synthesis/background_images/'
+OUTPUT_DIR = '/content/drive/MyDrive/model_1_generated_data/inputs_hyper_realistic/' # The final, official output folder
 
-# We will create and use a backgrounds folder also in your Drive
-BACKGROUNDS_DIR = os.path.join(DRIVE_BASE_PATH, 'data_synthesis/background_images/')
+# --- HELPER FUNCTION (Unchanged) ---
+def add_shadow(img):
+    shadow_offset = (15, 15)
+    shadow_color = (0, 0, 0, 180)
+    shadow = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    alpha_mask = Image.new('L', img.size, 255)
+    shadow.paste(shadow_color, (0,0), alpha_mask)
+    shadow = shadow.filter(ImageFilter.GaussianBlur(10))
+    final_canvas = Image.new('RGBA', (img.width + shadow_offset[0], img.height + shadow_offset[1]), (0,0,0,0))
+    final_canvas.paste(shadow, shadow_offset, shadow)
+    final_canvas.paste(img, (0,0), img)
+    return final_canvas
 
-# The new images will also be saved back to your Google Drive
-OUTPUT_DIR = os.path.join(DRIVE_BASE_PATH, 'data_synthesis/model_1_data/inputs/')
-
-# --- Test Configuration ---
-NUM_TEST_IMAGES = 5 
-
-# --- SCRIPT LOGIC ---
-def create_test_dataset():
+# --- FINAL FULL-SCALE GENERATION SCRIPT ---
+def create_final_dataset():
     """
-    Generates a small batch of test images for review using data from Google Drive.
+    Generates the full, hyper-realistic input dataset for Model 1.
+    Checks for the output directory only once at the start for efficiency.
     """
-    # Create the output directory in Google Drive if it doesn't exist
+    # --- OPTIMIZED: Check for the output directory ONCE at the start ---
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # Check if the source directory exists
     if not os.path.exists(SOURCE_PLOTS_DIR):
         print(f"❌ ERROR: Source directory not found at '{SOURCE_PLOTS_DIR}'")
-        print("Please make sure the path is correct and the folder has finished uploading.")
         return
 
     plot_files = [f for f in os.listdir(SOURCE_PLOTS_DIR) if f.endswith(('.png', '.jpg', '.jpeg'))]
     background_files = [f for f in os.listdir(BACKGROUNDS_DIR) if f.endswith(('.png', '.jpg', '.jpeg', '.webp'))]
 
     if not background_files:
-        print(f"❌ ERROR: No background images found in {BACKGROUNDS_DIR}. Please add some images to this folder in your Drive.")
+        print(f"❌ ERROR: No background images found.")
         return
     
-    num_to_generate = min(NUM_TEST_IMAGES, len(plot_files))
-    print(f"🚀 Starting test run. Generating {num_to_generate} images...")
+    random.shuffle(background_files)
+    
+    print(f"🚀 Starting FINAL hyper-realistic dataset generation for {len(plot_files)} images...")
+    print(f"   This process will take many hours. Images will be saved to '{OUTPUT_DIR}'")
 
-    # Loop through a limited number of plot files for the test
-    for filename in tqdm(plot_files[:num_to_generate], desc="Generating Test Images"):
+    for i, filename in enumerate(tqdm(plot_files, desc="Generating Dataset")):
         try:
+            # --- Image processing steps (unchanged) ---
             plot_path = os.path.join(SOURCE_PLOTS_DIR, filename)
             plot_img = Image.open(plot_path).convert("RGBA")
-
-            random_bg_filename = random.choice(background_files)
-            bg_path = os.path.join(BACKGROUNDS_DIR, random_bg_filename)
-            bg_img = Image.open(bg_path).convert("RGBA")
-
-            scale = random.uniform(0.75, 0.95)
-            new_plot_width = int(bg_img.width * scale)
+            bg_filename = background_files[i % len(background_files)]
+            bg_path = os.path.join(BACKGROUNDS_DIR, bg_filename)
+            bg_img = Image.open(bg_path).convert("RGB")
+            plot_with_shadow = add_shadow(plot_img)
+            if bg_img.width < plot_with_shadow.width or bg_img.height < plot_with_shadow.height:
+                new_bg_width = int(plot_with_shadow.width * 1.1)
+                new_bg_height = int(plot_with_shadow.height * 1.1)
+                bg_img = bg_img.resize((new_bg_width, new_bg_height), Image.LANCZOS)
+            paste_x = (bg_img.width - plot_with_shadow.width) // 2
+            paste_y = (bg_img.height - plot_with_shadow.height) // 2
+            bg_img.paste(plot_with_shadow, (paste_x, paste_y), plot_with_shadow)
             
-            aspect_ratio = plot_img.height / plot_img.width
-            new_plot_height = int(new_plot_width * aspect_ratio)
-
-            plot_resized = plot_img.resize((new_plot_width, new_plot_height), Image.LANCZOS)
-
-            max_x = bg_img.width - new_plot_width
-            max_y = bg_img.height - new_plot_height
-            
-            paste_x = random.randint(0, max(0, max_x))
-            paste_y = random.randint(0, max(0, max_y))
-
-            bg_img.paste(plot_resized, (paste_x, paste_y), plot_resized)
-
             output_path = os.path.join(OUTPUT_DIR, os.path.splitext(filename)[0] + '.jpg')
-            bg_img.convert("RGB").save(output_path, 'JPEG')
+            bg_img.save(output_path, 'JPEG', quality=95)
 
         except Exception as e:
-            print(f"Could not process {filename}. Error: {e}")
+            print(f"\nCould not process {filename}. Error: {e}")
 
-    print(f"\n✅ Test run complete. {num_to_generate} images saved to {OUTPUT_DIR}")
+    print(f"\n✅ Full hyper-realistic dataset generation complete. {len(plot_files)} images have been saved.")
 
-# To run this in Colab, you would call the function in a new cell
-# create_test_dataset()
+# Execute the final generation function
+create_final_dataset()
