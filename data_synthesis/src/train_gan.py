@@ -51,7 +51,7 @@ L1_LAMBDA = 100
 
 # --- PATHS (RELATIVE TO PROJECT ROOT) ---
 INPUT_DIR = 'model_1_generated_data/inputs_hyper_realistic/'
-TARGET_DIR = 'output/targets/'
+TARGET_DIR = 'data_synthesis/output/targets/'
 OUTPUT_CHECKPOINT = "models/gan_checkpoint.pth.tar"
 OUTPUT_SAMPLES_DIR = "training_samples/"
 
