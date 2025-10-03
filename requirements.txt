@@ -47,3 +47,6 @@ torch_pruning
 # === Utilities ===
 jupyterlab
 tqdm
+
+albumentations
+opencv-python-headless
