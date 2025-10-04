@@ -95,7 +95,7 @@ class ECGPairedDataset(Dataset):
         return len(self.input_images)
     def __getitem__(self, index):
         input_img_name = self.input_images[index]
-        target_img_name = input_img_name # Assumes input and target have same name but different extension
+        target_img_name = input_img_name.replace('.jpg', '.png') # Assumes input and target have same name but different extension
         
         input_path = os.path.join(self.input_dir, input_img_name)
         target_path = os.path.join(self.target_dir, target_img_name)
