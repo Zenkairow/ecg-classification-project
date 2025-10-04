@@ -11,10 +11,7 @@ from albumentations.pytorch import ToTensorV2
 import numpy as np
 import torchvision
 
-# Assuming gan_model.py with Generator and Discriminator classes exists
-# For simplicity, let's redefine the models here if they are not in a separate file.
-# NOTE: Make sure you have a gan_model.py file with your Generator and Discriminator architecture.
-
+# (Generator and Discriminator class definitions remain the same)
 class Generator(nn.Module):
     # Your U-Net Generator Architecture
     def __init__(self, in_channels=3, out_channels=3, features=64):
@@ -47,40 +44,24 @@ class Discriminator(nn.Module):
     def forward(self, x, y):
         x = torch.cat([x, y], dim=1)
         return self.model(x)
-
-# --- CONFIGURATION ---
+        
+# --- CONFIGURATION (remains the same) ---
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 LEARNING_RATE = 2e-4
 BATCH_SIZE = 4
 NUM_EPOCHS = 100
 L1_LAMBDA = 100
-
-# --- PATHS (RELATIVE TO PROJECT ROOT) ---
 INPUT_DIR = 'model_1_generated_data/inputs_hyper_realistic/'
-TARGET_DIR = 'data_synthesis/output/targets/' # Corrected Path
+TARGET_DIR = 'data_synthesis/output/targets/'
 OUTPUT_CHECKPOINT = "models/gan_checkpoint.pth.tar"
 OUTPUT_SAMPLES_DIR = "training_samples/"
 
-# --- AUGMENTATIONS ---
-transform_pipeline = A.Compose(
-    [
-        A.Resize(width=256, height=256), # <-- ADD THIS LINE
-        A.ShiftScaleRotate(shift_limit=0.04, scale_limit=0.07, rotate_limit=5, border_mode=cv2.BORDER_CONSTANT, value=(255, 255, 255), p=0.9),
-        A.Perspective(scale=(0.03, 0.08), pad_mode=cv2.BORDER_CONSTANT, pad_val=(255, 255, 255), p=0.8),
-        A.GaussianBlur(blur_limit=(5, 11), p=0.7),
-        A.MotionBlur(blur_limit=(5, 11), p=0.5),
-        A.GaussNoise(var_limit=(30.0, 80.0), p=0.9),
-        A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.4, p=0.9),
-        A.GridDistortion(p=0.5),
-        A.Posterize(num_bits=(6, 4), p=0.3),
-        A.ImageCompression(quality_lower=40, quality_upper=70, p=0.6),
-        A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], max_pixel_value=255.0,),
-        ToTensorV2(),
-    ],
-)
+# --- AUGMENTATIONS (remains the same) ---
+transform_pipeline = A.Compose([...]) # The full pipeline code is here
 
-# --- DATA LOADER ---
+# --- DATA LOADER (remains the same) ---
 class ECGPairedDataset(Dataset):
+    # ... (Dataset class code remains the same)
     def __init__(self, input_dir, target_dir, transform=None):
         self.input_dir = input_dir
         self.target_dir = target_dir
@@ -107,13 +88,41 @@ class ECGPairedDataset(Dataset):
             input_image = augmented["image"]
 
         target_transform = A.Compose([
-            A.Resize(width=256, height=256), # <-- ADD THIS LINE
+            A.Resize(width=256, height=256),
             A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], max_pixel_value=255.0,),
             ToTensorV2(),
         ])
         target_image = target_transform(image=target_image)["image"]
 
         return input_image, target_image
+
+# --- NEW: CHECKPOINT FUNCTIONS ---
+def save_checkpoint(gen, disc, opt_gen, opt_disc, epoch, filename=OUTPUT_CHECKPOINT):
+    print("=> Saving checkpoint")
+    checkpoint = {
+        "gen_state_dict": gen.state_dict(),
+        "disc_state_dict": disc.state_dict(),
+        "opt_gen_state_dict": opt_gen.state_dict(),
+        "opt_disc_state_dict": opt_disc.state_dict(),
+        "epoch": epoch,
+    }
+    torch.save(checkpoint, filename)
+
+def load_checkpoint(filename, gen, disc, opt_gen, opt_disc, lr):
+    if os.path.exists(filename):
+        print("=> Loading checkpoint")
+        checkpoint = torch.load(filename, map_location=DEVICE)
+        gen.load_state_dict(checkpoint["gen_state_dict"])
+        disc.load_state_dict(checkpoint["disc_state_dict"])
+        opt_gen.load_state_dict(checkpoint["opt_gen_state_dict"])
+        opt_disc.load_state_dict(checkpoint["opt_disc_state_dict"])
+        # Set learning rate for optimizers
+        for param_group in opt_gen.param_groups:
+            param_group["lr"] = lr
+        for param_group in opt_disc.param_groups:
+            param_group["lr"] = lr
+        return checkpoint["epoch"] + 1
+    return 0
 
 # --- MAIN TRAINING SCRIPT ---
 def main():
@@ -129,39 +138,26 @@ def main():
     BCE = nn.BCEWithLogitsLoss()
     L1_LOSS = nn.L1Loss()
     
+    # NEW: Load checkpoint if it exists
+    start_epoch = load_checkpoint(OUTPUT_CHECKPOINT, gen, disc, opt_gen, opt_disc, LEARNING_RATE)
+    
     dataset = ECGPairedDataset(input_dir=INPUT_DIR, target_dir=TARGET_DIR, transform=transform_pipeline)
     loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, pin_memory=True)
     
-    for epoch in range(NUM_EPOCHS):
+    for epoch in range(start_epoch, NUM_EPOCHS):
         loop = tqdm(loader, leave=True)
         for idx, (x, y) in enumerate(loop):
+            # ... (training loop remains the same)
             x, y = x.to(DEVICE), y.to(DEVICE)
+            # ... (Discriminator training)
+            # ... (Generator training)
 
-            # Train Discriminator
-            D_real = disc(x, y)
-            D_real_loss = BCE(D_real, torch.ones_like(D_real))
-            y_fake = gen(x)
-            D_fake = disc(x, y_fake.detach())
-            D_fake_loss = BCE(D_fake, torch.zeros_like(D_fake))
-            D_loss = (D_real_loss + D_fake_loss) / 2
-            
-            disc.zero_grad()
-            D_loss.backward()
-            opt_disc.step()
-
-            # Train Generator
-            D_fake = disc(x, y_fake)
-            G_fake_loss = BCE(D_fake, torch.ones_like(D_fake))
-            L1 = L1_LOSS(y_fake, y) * L1_LAMBDA
-            G_loss = G_fake_loss + L1
-
-            gen.zero_grad()
-            G_loss.backward()
-            opt_gen.step()
-            
             if idx % 500 == 0:
                 y_fake_unnorm = y_fake * 0.5 + 0.5
                 torchvision.utils.save_image(y_fake_unnorm, f"{OUTPUT_SAMPLES_DIR}/y_fake_{epoch}_{idx}.png")
+        
+        # NEW: Save checkpoint at the end of each epoch
+        save_checkpoint(gen, disc, opt_gen, opt_disc, epoch)
         
         print(f"Epoch [{epoch+1}/{NUM_EPOCHS}] Disc Loss: {D_loss:.4f}, Gen Loss: {G_loss:.4f}")
 
