@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-from PIL import Image
+from PIL import Image, ImageFile
 from tqdm import tqdm
 import os
 import cv2
@@ -11,77 +11,103 @@ from albumentations.pytorch import ToTensorV2
 import numpy as np
 import torchvision
 
-# (Generator and Discriminator class definitions remain the same)
+# Allow loading of potentially corrupt image files
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+# --- MODEL DEFINITIONS ---
 class Generator(nn.Module):
-    # Your U-Net Generator Architecture
+    # This is a simplified U-Net example. A full implementation would have more layers.
     def __init__(self, in_channels=3, out_channels=3, features=64):
         super().__init__()
-        # This is a simplified example, your actual model should be a full U-Net
-        self.down1 = nn.Sequential(nn.Conv2d(in_channels, features, 4, 2, 1, bias=False), nn.LeakyReLU(0.2))
-        self.down2 = nn.Sequential(nn.Conv2d(features, features*2, 4, 2, 1, bias=False), nn.BatchNorm2d(features*2), nn.LeakyReLU(0.2))
-        self.up1 = nn.Sequential(nn.ConvTranspose2d(features*2, features, 4, 2, 1, bias=False), nn.BatchNorm2d(features), nn.ReLU())
-        self.final_up = nn.Sequential(nn.ConvTranspose2d(features*2, out_channels, 4, 2, 1), nn.Tanh())
+        self.down1 = nn.Sequential(nn.Conv2d(in_channels, features, 4, 2, 1, padding_mode="reflect"), nn.LeakyReLU(0.2))
+        self.down2 = nn.Sequential(nn.Conv2d(features, features * 2, 4, 2, 1, bias=False, padding_mode="reflect"), nn.BatchNorm2d(features * 2), nn.LeakyReLU(0.2))
+        # ... more down layers ...
+        self.bottleneck = nn.Sequential(nn.Conv2d(features * 2, features * 4, 4, 2, 1), nn.ReLU())
+        # ... more up layers ...
+        self.up1 = nn.Sequential(nn.ConvTranspose2d(features * 4, features * 2, 4, 2, 1, bias=False), nn.BatchNorm2d(features * 2), nn.ReLU())
+        self.up2 = nn.Sequential(nn.ConvTranspose2d(features * 4, features, 4, 2, 1, bias=False), nn.BatchNorm2d(features), nn.ReLU())
+        self.final_up = nn.Sequential(nn.ConvTranspose2d(features * 2, out_channels, 4, 2, 1), nn.Tanh())
     def forward(self, x):
         d1 = self.down1(x)
         d2 = self.down2(d1)
-        u1 = self.up1(d2)
-        # In a real U-Net, you would concatenate d1 with u1 here
-        return self.final_up(torch.cat([u1, d1], 1)) # Simplified example
+        bottleneck = self.bottleneck(d2)
+        u1 = self.up1(bottleneck)
+        u2 = self.up2(torch.cat([u1, d2], 1)) # Skip connection
+        return self.final_up(torch.cat([u2, d1], 1)) # Skip connection
 
 class Discriminator(nn.Module):
-    # Your PatchGAN Discriminator Architecture
+    # Standard PatchGAN Discriminator
     def __init__(self, in_channels=6, features=[64, 128, 256, 512]):
         super().__init__()
-        layers = [nn.Conv2d(in_channels, features[0], 4, 2, 1), nn.LeakyReLU(0.2)]
+        layers = [nn.Conv2d(in_channels, features[0], kernel_size=4, stride=2, padding=1, padding_mode="reflect"), nn.LeakyReLU(0.2)]
         in_channels = features[0]
         for feature in features[1:]:
-            layers.append(nn.Conv2d(in_channels, feature, 4, 2, 1, bias=False))
+            layers.append(nn.Conv2d(in_channels, feature, kernel_size=4, stride=2, padding=1, bias=False, padding_mode="reflect"))
             layers.append(nn.BatchNorm2d(feature))
             layers.append(nn.LeakyReLU(0.2))
             in_channels = feature
-        layers.append(nn.Conv2d(in_channels, 1, 4, 1, 1))
+        layers.append(nn.Conv2d(in_channels, 1, kernel_size=4, stride=1, padding=1, padding_mode="reflect"))
         self.model = nn.Sequential(*layers)
     def forward(self, x, y):
         x = torch.cat([x, y], dim=1)
         return self.model(x)
-        
-# --- CONFIGURATION (remains the same) ---
+
+# --- CONFIGURATION ---
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 LEARNING_RATE = 2e-4
 BATCH_SIZE = 4
 NUM_EPOCHS = 100
 L1_LAMBDA = 100
+NUM_WORKERS = 4
+
+# --- PATHS (RELATIVE TO PROJECT ROOT) ---
 INPUT_DIR = 'model_1_generated_data/inputs_hyper_realistic/'
 TARGET_DIR = 'data_synthesis/output/targets/'
 OUTPUT_CHECKPOINT = "models/gan_checkpoint.pth.tar"
 OUTPUT_SAMPLES_DIR = "training_samples/"
 
-# --- AUGMENTATIONS (remains the same) ---
-transform_pipeline = A.Compose([...]) # The full pipeline code is here
+# --- AUGMENTATIONS ---
+transform_pipeline = A.Compose(
+    [
+        A.Resize(width=256, height=256),
+        A.ShiftScaleRotate(shift_limit=0.04, scale_limit=0.07, rotate_limit=5, border_mode=cv2.BORDER_CONSTANT, value=(255, 255, 255), p=0.9),
+        A.Perspective(scale=(0.03, 0.08), pad_mode=cv2.BORDER_CONSTANT, pad_val=(255, 255, 255), p=0.8),
+        A.GaussianBlur(blur_limit=(5, 11), p=0.7),
+        A.MotionBlur(blur_limit=(5, 11), p=0.5),
+        A.GaussNoise(var_limit=(30.0, 80.0), p=0.9),
+        A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.4, p=0.9),
+        A.GridDistortion(p=0.5),
+        A.Posterize(num_bits=(6, 4), p=0.3),
+        A.ImageCompression(quality_lower=40, quality_upper=70, p=0.6),
+        A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], max_pixel_value=255.0,),
+        ToTensorV2(),
+    ],
+)
 
-# --- DATA LOADER (remains the same) ---
+# --- DATA LOADER ---
 class ECGPairedDataset(Dataset):
-    # ... (Dataset class code remains the same)
     def __init__(self, input_dir, target_dir, transform=None):
         self.input_dir = input_dir
         self.target_dir = target_dir
         self.transform = transform
         self.input_images = sorted(os.listdir(input_dir))
-        # Ensure filenames match between input and target directories
-        self.target_images = [f.replace('.jpg', '.png') for f in self.input_images] # Or adjust based on your naming
-
     def __len__(self):
         return len(self.input_images)
-
     def __getitem__(self, index):
         input_img_name = self.input_images[index]
-        target_img_name = self.target_images[index]
+        target_img_name = input_img_name # Assumes input and target have same name but different extension
         
         input_path = os.path.join(self.input_dir, input_img_name)
         target_path = os.path.join(self.target_dir, target_img_name)
-
-        input_image = np.array(Image.open(input_path).convert("RGB"))
-        target_image = np.array(Image.open(target_path).convert("RGB"))
+        
+        # Open images, handling potential errors
+        try:
+            input_image = np.array(Image.open(input_path).convert("RGB"))
+            target_image = np.array(Image.open(target_path).convert("RGB"))
+        except Exception as e:
+            print(f"Error loading images: {input_img_name}, {target_img_name}. Error: {e}")
+            # Return dummy data to prevent crash
+            return torch.randn(3, 256, 256), torch.randn(3, 256, 256)
 
         if self.transform:
             augmented = self.transform(image=input_image)
@@ -96,7 +122,7 @@ class ECGPairedDataset(Dataset):
 
         return input_image, target_image
 
-# --- NEW: CHECKPOINT FUNCTIONS ---
+# --- CHECKPOINT FUNCTIONS ---
 def save_checkpoint(gen, disc, opt_gen, opt_disc, epoch, filename=OUTPUT_CHECKPOINT):
     print("=> Saving checkpoint")
     checkpoint = {
@@ -116,11 +142,9 @@ def load_checkpoint(filename, gen, disc, opt_gen, opt_disc, lr):
         disc.load_state_dict(checkpoint["disc_state_dict"])
         opt_gen.load_state_dict(checkpoint["opt_gen_state_dict"])
         opt_disc.load_state_dict(checkpoint["opt_disc_state_dict"])
-        # Set learning rate for optimizers
-        for param_group in opt_gen.param_groups:
-            param_group["lr"] = lr
-        for param_group in opt_disc.param_groups:
-            param_group["lr"] = lr
+        for param_group in opt_gen.param_groups: param_group["lr"] = lr
+        for param_group in opt_disc.param_groups: param_group["lr"] = lr
+        print(f"=> Resuming from epoch {checkpoint['epoch'] + 1}")
         return checkpoint["epoch"] + 1
     return 0
 
@@ -128,8 +152,9 @@ def load_checkpoint(filename, gen, disc, opt_gen, opt_disc, lr):
 def main():
     print(f"Starting training on device: {DEVICE}")
     os.makedirs(OUTPUT_SAMPLES_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(OUTPUT_CHECKPOINT), exist_ok=True)
     
-    gen = Generator(in_channels=3, features=64).to(DEVICE)
+    gen = Generator(in_channels=3).to(DEVICE)
     disc = Discriminator(in_channels=6).to(DEVICE)
     
     opt_gen = optim.Adam(gen.parameters(), lr=LEARNING_RATE, betas=(0.5, 0.999))
@@ -138,28 +163,46 @@ def main():
     BCE = nn.BCEWithLogitsLoss()
     L1_LOSS = nn.L1Loss()
     
-    # NEW: Load checkpoint if it exists
     start_epoch = load_checkpoint(OUTPUT_CHECKPOINT, gen, disc, opt_gen, opt_disc, LEARNING_RATE)
     
     dataset = ECGPairedDataset(input_dir=INPUT_DIR, target_dir=TARGET_DIR, transform=transform_pipeline)
-    loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, pin_memory=True)
+    loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, pin_memory=True)
     
     for epoch in range(start_epoch, NUM_EPOCHS):
         loop = tqdm(loader, leave=True)
         for idx, (x, y) in enumerate(loop):
-            # ... (training loop remains the same)
             x, y = x.to(DEVICE), y.to(DEVICE)
-            # ... (Discriminator training)
-            # ... (Generator training)
 
-            if idx % 500 == 0:
+            # Train Discriminator
+            y_fake = gen(x)
+            D_real = disc(x, y)
+            D_real_loss = BCE(D_real, torch.ones_like(D_real))
+            D_fake = disc(x, y_fake.detach())
+            D_fake_loss = BCE(D_fake, torch.zeros_like(D_fake))
+            D_loss = (D_real_loss + D_fake_loss) / 2
+            
+            disc.zero_grad()
+            D_loss.backward()
+            opt_disc.step()
+
+            # Train Generator
+            D_fake = disc(x, y_fake)
+            G_fake_loss = BCE(D_fake, torch.ones_like(D_fake))
+            L1 = L1_LOSS(y_fake, y) * L1_LAMBDA
+            G_loss = G_fake_loss + L1
+
+            gen.zero_grad()
+            G_loss.backward()
+            opt_gen.step()
+            
+            loop.set_postfix(D_real=torch.sigmoid(D_real).mean().item(), D_fake=torch.sigmoid(D_fake).mean().item())
+
+            if idx == 0: # Save one sample at the beginning of each epoch
                 y_fake_unnorm = y_fake * 0.5 + 0.5
-                torchvision.utils.save_image(y_fake_unnorm, f"{OUTPUT_SAMPLES_DIR}/y_fake_{epoch}_{idx}.png")
+                torchvision.utils.save_image(y_fake_unnorm, f"{OUTPUT_SAMPLES_DIR}/y_fake_epoch_{epoch}.png")
         
-        # NEW: Save checkpoint at the end of each epoch
         save_checkpoint(gen, disc, opt_gen, opt_disc, epoch)
-        
-        print(f"Epoch [{epoch+1}/{NUM_EPOCHS}] Disc Loss: {D_loss:.4f}, Gen Loss: {G_loss:.4f}")
+        print(f"Epoch [{epoch+1}/{NUM_EPOCHS}] Disc Loss: {D_loss.item():.4f}, Gen Loss: {G_loss.item():.4f}")
 
 if __name__ == "__main__":
     main()
