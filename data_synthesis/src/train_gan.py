@@ -148,7 +148,7 @@ def main():
     gen = Generator(in_channels=3).to(DEVICE)
     disc = Discriminator(in_channels=6).to(DEVICE)
     opt_gen = optim.Adam(gen.parameters(), lr=LEARNING_RATE, betas=(0.5, 0.999))
-    opt_disc = optim.Adam(disc.parameters(), lr=LEARNING_RATE, betas=(0.5, 0.999))
+    opt_disc = optim.Adam(disc.parameters(), lr=LEARNING_RATE / 2, betas=(0.5, 0.999))
     BCE = nn.BCEWithLogitsLoss()
     L1_LOSS = nn.L1Loss()
     start_epoch = load_checkpoint(OUTPUT_CHECKPOINT, gen, disc, opt_gen, opt_disc, LEARNING_RATE)
