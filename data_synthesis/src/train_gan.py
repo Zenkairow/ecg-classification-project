@@ -166,7 +166,8 @@ def main():
             # Train Discriminator
             y_fake = gen(x)
             D_real = disc(x, y)
-            D_real_loss = BCE(D_real, torch.ones_like(D_real))
+            # Use 0.9 for real labels instead of 1.0
+            D_real_loss = BCE(D_real, torch.full_like(D_real, 0.9, device=DEVICE))
             D_fake = disc(x, y_fake.detach())
             D_fake_loss = BCE(D_fake, torch.zeros_like(D_fake))
             D_loss = (D_real_loss + D_fake_loss) / 2
