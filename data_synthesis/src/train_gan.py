@@ -209,7 +209,7 @@ def main():
     os.makedirs(OUTPUT_SAMPLES_DIR, exist_ok=True)
     os.makedirs(os.path.dirname(OUTPUT_CHECKPOINT), exist_ok=True)
     gen = Generator(in_channels=3).to(DEVICE)
-    disc = Discriminator(in_channels=6).to(DEVICE)
+    disc = Discriminator(in_channels=3).to(DEVICE)
     opt_gen = optim.Adam(gen.parameters(), lr=LEARNING_RATE, betas=(0.5, 0.999))
     opt_disc = optim.Adam(disc.parameters(), lr=LEARNING_RATE / 10, betas=(0.5, 0.999))
     BCE = nn.BCEWithLogitsLoss()
