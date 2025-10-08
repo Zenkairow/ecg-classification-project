@@ -115,7 +115,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 LEARNING_RATE = 2e-4
 BATCH_SIZE = 4
 NUM_EPOCHS = 100
-L1_LAMBDA = 100
+L1_LAMBDA = 500 # Drastically increased for stronger reconstruction 
 NUM_WORKERS = 4
 INPUT_DIR = 'model_1_generated_data/inputs_hyper_realistic/'
 TARGET_DIR = 'data_synthesis/output/targets/'
@@ -246,8 +246,9 @@ def main():
             G_loss.backward()
             opt_gen.step()
             loop.set_postfix(D_real=torch.sigmoid(D_real).mean().item(), D_fake=torch.sigmoid(D_fake).mean().item())
+            # Save only the first image from the batch for clarity
             if idx == 0:
-                y_fake_unnorm = y_fake * 0.5 + 0.5
+                y_fake_unnorm = y_fake[0:1] * 0.5 + 0.5 # Take only the first image
                 torchvision.utils.save_image(y_fake_unnorm, f"{OUTPUT_SAMPLES_DIR}/y_fake_epoch_{epoch}.png")
         save_checkpoint(gen, disc, opt_gen, opt_disc, epoch)
         print(f"Epoch [{epoch+1}/{NUM_EPOCHS}] Disc Loss: {D_loss.item():.4f}, Gen Loss: {G_loss.item():.4f}")
