@@ -122,19 +122,20 @@ TARGET_DIR = 'data_synthesis/output/targets/'
 OUTPUT_CHECKPOINT = "models/gan_checkpoint.pth.tar"
 OUTPUT_SAMPLES_DIR = "training_samples/"
 
-# --- AUGMENTATIONS ---
+# --- AUGMENTATIONS (SIMPLIFIED VERSION) ---
 transform_pipeline = A.Compose(
     [
         A.Resize(width=256, height=256),
-        A.ShiftScaleRotate(shift_limit=0.04, scale_limit=0.07, rotate_limit=5, border_mode=cv2.BORDER_CONSTANT, value=(255, 255, 255), p=0.9),
-        A.Perspective(scale=(0.03, 0.08), pad_mode=cv2.BORDER_CONSTANT, pad_val=(255, 255, 255), p=0.8),
-        A.GaussianBlur(blur_limit=(5, 11), p=0.7),
-        A.MotionBlur(blur_limit=(5, 11), p=0.5),
-        A.GaussNoise(var_limit=(30.0, 80.0), p=0.9),
-        A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.4, p=0.9),
-        A.GridDistortion(p=0.5),
-        A.Posterize(num_bits=(6, 4), p=0.3),
-        A.ImageCompression(quality_lower=40, quality_upper=70, p=0.6),
+        
+        # Only apply gentle rotation and scaling
+        A.ShiftScaleRotate(shift_limit=0.02, scale_limit=0.05, rotate_limit=5, p=0.8),
+        
+        # A moderate amount of blur
+        A.GaussianBlur(blur_limit=(3, 7), p=0.5),
+        
+        # Basic lighting changes
+        A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.7),
+        
         A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], max_pixel_value=255.0,),
         ToTensorV2(),
     ],
