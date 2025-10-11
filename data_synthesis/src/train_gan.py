@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
+from pytorch_msssim import SSIM
 from PIL import Image, ImageFile
 from tqdm import tqdm
 import os
@@ -115,15 +116,14 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 LEARNING_RATE = 2e-4
 BATCH_SIZE = 4
 NUM_EPOCHS = 100
-L1_LAMBDA = 500 # Drastically increased for stronger reconstruction 
+SSIM_LAMBDA = 250 # Weight for the structural similarity loss
 NUM_WORKERS = 4
 INPUT_DIR = 'model_1_generated_data/inputs_hyper_realistic/'
 TARGET_DIR = 'data_synthesis/output/targets/'
 OUTPUT_CHECKPOINT = "models/gan_checkpoint.pth.tar"
 OUTPUT_SAMPLES_DIR = "training_samples/"
 
-# --- AUGMENTATIONS (SANITY CHECK VERSION) ---
-# This temporary version disables ALL augmentations except for the essentials.
+# --- AUGMENTATIONS (ZERO-AUGMENTATION BASELINE VERSION) ---
 transform_pipeline = A.Compose(
     [
         A.Resize(width=256, height=256),
@@ -205,19 +205,13 @@ def main():
     opt_gen = optim.Adam(gen.parameters(), lr=LEARNING_RATE, betas=(0.5, 0.999))
     opt_disc = optim.Adam(disc.parameters(), lr=LEARNING_RATE / 10, betas=(0.5, 0.999))
     BCE = nn.BCEWithLogitsLoss()
-    L1_LOSS = nn.L1Loss()
+    SSIM_LOSS = SSIM(data_range=1.0, size_average=True, channel=3)
+    
     start_epoch = load_checkpoint(OUTPUT_CHECKPOINT, gen, disc, opt_gen, opt_disc, LEARNING_RATE)
-    # --- MODIFICATION FOR SANITY CHECK ---
-    print("--- RUNNING IN SANITY CHECK MODE ---")
-    # First, we load the full dataset definition
-    full_dataset = ECGPairedDataset(input_dir=INPUT_DIR, target_dir=TARGET_DIR, transform=transform_pipeline)
     
-    # Now, we create a tiny subset containing only the first 4 images
-    sanity_check_subset = torch.utils.data.Subset(full_dataset, range(4))
+    dataset = ECGPairedDataset(input_dir=INPUT_DIR, target_dir=TARGET_DIR, transform=transform_pipeline)
+    loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, pin_memory=True, collate_fn=collate_fn)
     
-    # Finally, we create the loader with shuffling turned OFF
-    loader = DataLoader(sanity_check_subset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=True, collate_fn=collate_fn)
-    # --- END MODIFICATION ---
     for epoch in range(start_epoch, NUM_EPOCHS):
         loop = tqdm(loader, leave=True)
         for idx, batch_data in enumerate(loop):
@@ -227,10 +221,10 @@ def main():
             if x is None:
                 continue
             x, y = x.to(DEVICE), y.to(DEVICE)
+            
             # Train Discriminator
             y_fake = gen(x)
             D_real = disc(x, y)
-            # Use 0.9 for real labels instead of 1.0
             D_real_loss = BCE(D_real, torch.full_like(D_real, 0.9, device=DEVICE))
             D_fake = disc(x, y_fake.detach())
             D_fake_loss = BCE(D_fake, torch.zeros_like(D_fake))
@@ -238,19 +232,30 @@ def main():
             disc.zero_grad()
             D_loss.backward()
             opt_disc.step()
+            
             # Train Generator
             D_fake = disc(x, y_fake)
             G_fake_loss = BCE(D_fake, torch.ones_like(D_fake))
-            L1 = L1_LOSS(y_fake, y) * L1_LAMBDA
-            G_loss = G_fake_loss + L1
+            
+            # Un-normalize images from [-1, 1] to [0, 1] for SSIM calculation
+            y_fake_for_ssim = (y_fake + 1) / 2
+            y_for_ssim = (y + 1) / 2
+            
+            # Calculate the SSIM loss (1 - similarity) and apply its weight
+            ssim_loss_val = (1 - SSIM_LOSS(y_fake_for_ssim, y_for_ssim)) * SSIM_LAMBDA
+            
+            G_loss = G_fake_loss + ssim_loss_val
+            
             gen.zero_grad()
             G_loss.backward()
             opt_gen.step()
+            
             loop.set_postfix(D_real=torch.sigmoid(D_real).mean().item(), D_fake=torch.sigmoid(D_fake).mean().item())
-            # Save only the first image from the batch for clarity
+            
             if idx == 0:
-                y_fake_unnorm = y_fake[0:1] * 0.5 + 0.5 # Take only the first image
+                y_fake_unnorm = y_fake[0:1] * 0.5 + 0.5
                 torchvision.utils.save_image(y_fake_unnorm, f"{OUTPUT_SAMPLES_DIR}/y_fake_epoch_{epoch}.png")
+        
         save_checkpoint(gen, disc, opt_gen, opt_disc, epoch)
         print(f"Epoch [{epoch+1}/{NUM_EPOCHS}] Disc Loss: {D_loss.item():.4f}, Gen Loss: {G_loss.item():.4f}")
 
