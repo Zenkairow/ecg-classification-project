@@ -122,20 +122,11 @@ TARGET_DIR = 'data_synthesis/output/targets/'
 OUTPUT_CHECKPOINT = "models/gan_checkpoint.pth.tar"
 OUTPUT_SAMPLES_DIR = "training_samples/"
 
-# --- AUGMENTATIONS (SIMPLIFIED VERSION) ---
+# --- AUGMENTATIONS (SANITY CHECK VERSION) ---
+# This temporary version disables ALL augmentations except for the essentials.
 transform_pipeline = A.Compose(
     [
         A.Resize(width=256, height=256),
-        
-        # Only apply gentle rotation and scaling
-        A.ShiftScaleRotate(shift_limit=0.02, scale_limit=0.05, rotate_limit=5, p=0.8),
-        
-        # A moderate amount of blur
-        A.GaussianBlur(blur_limit=(3, 7), p=0.5),
-        
-        # Basic lighting changes
-        A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.7),
-        
         A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], max_pixel_value=255.0,),
         ToTensorV2(),
     ],
@@ -216,8 +207,17 @@ def main():
     BCE = nn.BCEWithLogitsLoss()
     L1_LOSS = nn.L1Loss()
     start_epoch = load_checkpoint(OUTPUT_CHECKPOINT, gen, disc, opt_gen, opt_disc, LEARNING_RATE)
-    dataset = ECGPairedDataset(input_dir=INPUT_DIR, target_dir=TARGET_DIR, transform=transform_pipeline)
-    loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, pin_memory=True, collate_fn=collate_fn)
+    # --- MODIFICATION FOR SANITY CHECK ---
+    print("--- RUNNING IN SANITY CHECK MODE ---")
+    # First, we load the full dataset definition
+    full_dataset = ECGPairedDataset(input_dir=INPUT_DIR, target_dir=TARGET_DIR, transform=transform_pipeline)
+    
+    # Now, we create a tiny subset containing only the first 4 images
+    sanity_check_subset = torch.utils.data.Subset(full_dataset, range(4))
+    
+    # Finally, we create the loader with shuffling turned OFF
+    loader = DataLoader(sanity_check_subset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=True, collate_fn=collate_fn)
+    # --- END MODIFICATION ---
     for epoch in range(start_epoch, NUM_EPOCHS):
         loop = tqdm(loader, leave=True)
         for idx, batch_data in enumerate(loop):
