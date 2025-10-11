@@ -50,3 +50,4 @@ tqdm
 
 albumentations
 opencv-python-headless
+pytorch-msssim
