@@ -43,6 +43,7 @@ captum
 onnx
 torch-tensorrt
 torch_pruning
+torchvision
 
 # === Utilities ===
 jupyterlab
