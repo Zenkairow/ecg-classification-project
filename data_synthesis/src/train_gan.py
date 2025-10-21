@@ -19,7 +19,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 # --- CONFIGURATION ---
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 LEARNING_RATE = 1e-5  # CRITICAL: Use a very low learning rate for fine-tuning
-BATCH_SIZE = 4
+BATCH_SIZE = 1
 NUM_EPOCHS = 50       # We don't need 100 epochs when fine-tuning
 SSIM_LAMBDA = 250     # Weight for the structural similarity loss
 NUM_WORKERS = 4
