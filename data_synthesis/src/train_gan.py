@@ -12,7 +12,7 @@ import torchvision
 from pytorch_msssim import SSIM
 
 # --- NEW: Import the Real-ESRGAN architecture ---
-from realesrgan.archs.rrdbnet_arch import RRDBNet
+from realesrgan.archs import RRDBNet
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
