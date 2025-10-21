@@ -35,7 +35,7 @@ OUTPUT_SAMPLES_DIR = "training_samples/"
 # We start by fine-tuning on the easiest task
 transform_pipeline = A.Compose(
     [
-        A.Resize(width=256, height=256),
+        A.Resize(width=128, height=128),
         A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], max_pixel_value=255.0,),
         ToTensorV2(),
     ],
@@ -74,7 +74,7 @@ class ECGPairedDataset(Dataset):
 
         # Apply a separate, simple transform to the target image
         target_transform = A.Compose([
-            A.Resize(width=256, height=256),
+            A.Resize(width=128, height=128),
             A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], max_pixel_value=255.0,),
             ToTensorV2(),
         ])
