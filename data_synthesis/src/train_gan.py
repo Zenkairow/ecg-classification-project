@@ -31,10 +31,18 @@ OUTPUT_CHECKPOINT = "models/realesrgan_finetune_checkpoint.pth.tar" # New checkp
 PRETRAINED_MODEL_PATH = "models/RealESRGAN_x4plus.pth" # Path to our downloaded model
 OUTPUT_SAMPLES_DIR = "training_samples/"
 
-# --- AUGMENTATIONS (Zero-Augmentation Baseline at 128x128) ---
+# --- AUGMENTATIONS (HEAVY RESTORATION TASK) ---
 transform_pipeline = A.Compose(
     [
-        A.Resize(width=128, height=128), # Reduced resolution
+        # --- Heavy augmentations to create a "damaged" photo ---
+        A.GaussNoise(var_limit=(10.0, 50.0), p=0.8),
+        A.GaussianBlur(blur_limit=(3, 7), p=0.8),
+        A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.8),
+        A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=15, p=0.7),
+        A.ElasticTransform(p=0.5, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+        # --------------------------------------------------------
+
+        A.Resize(width=128, height=128), # Keep 128x128 for memory
         A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], max_pixel_value=255.0,),
         ToTensorV2(),
     ],
