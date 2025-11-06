@@ -6,8 +6,7 @@ import glob
 
 # --- CONFIGURATION ---
 INPUT_DIR = 'data_synthesis/output/targets/'
-OUTPUT_DIR = 'data_synthesis/output/test_signal_targets/'
-LIMIT = 2
+OUTPUT_DIR = 'data_synthesis/output/signal_targets_final/'
 # ---------------------
 
 def create_signal_only_image(img_path, output_path):
@@ -50,7 +49,7 @@ def create_signal_only_image(img_path, output_path):
         print(f"Error processing {img_path}: {e}")
 
 def main():
-    print(f"--- Starting sample generation (2 samples) [v3 - HSV Masking] ---")
+    print(f"--- Starting FULL dataset generation [v3 - HSV Masking] ---")
     print(f"Input dir: {INPUT_DIR}")
     print(f"Output dir: {OUTPUT_DIR}")
 
@@ -62,14 +61,15 @@ def main():
         print(f"Error: No .png files found in {INPUT_DIR}")
         return
 
-    files_to_process = target_files[:LIMIT]
-    
-    for filename in tqdm(files_to_process, desc="Generating Samples"):
+    # Process ALL files
+    print(f"Found {len(target_files)} files to process.")
+
+    for filename in tqdm(target_files, desc="Generating All Signal Targets"):
         output_filename = os.path.basename(filename)
         output_path = os.path.join(OUTPUT_DIR, output_filename)
         create_signal_only_image(filename, output_path)
         
-    print(f"Done. Generated {len(files_to_process)} test samples in {OUTPUT_DIR}")
+    print(f"Done. Generated {len(target_files)} images in {OUTPUT_DIR}")
 
 if __name__ == "__main__":
     main()
