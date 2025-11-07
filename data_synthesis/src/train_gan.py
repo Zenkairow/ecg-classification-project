@@ -26,7 +26,7 @@ NUM_WORKERS = 4
 
 # --- PATHS ---
 INPUT_DIR = 'model_1_generated_data/inputs_hyper_realistic/'
-TARGET_DIR = 'data_synthesis/output/targets/'
+TARGET_DIR = 'data_synthesis/output/signal_targets_final/'
 OUTPUT_CHECKPOINT = "models/realesrgan_finetune_checkpoint.pth.tar" # New checkpoint name
 PRETRAINED_MODEL_PATH = "models/RealESRGAN_x4plus.pth" # Path to our downloaded model
 OUTPUT_SAMPLES_DIR = "training_samples/"
