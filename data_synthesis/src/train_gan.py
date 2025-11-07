@@ -36,7 +36,7 @@ transform_pipeline = A.Compose(
     [
         # --- Heavy augmentations to create a "damaged" photo ---
 
-        A.GaussNoise(std_range=(10.0, 50.0), p=0.8),
+        A.GaussNoise(std_range=(0.039, 0.196), p=0.8),
 
         A.GaussianBlur(blur_limit=(3, 7), p=0.8),
         A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.8),
