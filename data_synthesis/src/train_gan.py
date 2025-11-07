@@ -35,11 +35,18 @@ OUTPUT_SAMPLES_DIR = "training_samples/"
 transform_pipeline = A.Compose(
     [
         # --- Heavy augmentations to create a "damaged" photo ---
-        A.GaussNoise(var_limit=(10.0, 50.0), p=0.8),
+
+        # Corrected: 'var_limit' is now 'gauss_var_limit'
+        A.GaussNoise(gauss_var_limit=(10.0, 50.0), p=0.8), 
+
         A.GaussianBlur(blur_limit=(3, 7), p=0.8),
         A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.8),
-        A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=15, p=0.7),
-        A.ElasticTransform(p=0.5, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03),
+
+        # Use the recommended 'Affine' transform
+        A.Affine(scale=0.95, translate_percent=0.05, rotate=15, p=0.7), 
+
+        # Corrected: 'alpha_affine' is no longer valid
+        A.ElasticTransform(p=0.5, alpha=120, sigma=120 * 0.05),
         # --------------------------------------------------------
 
         A.Resize(width=128, height=128), # Keep 128x128 for memory
