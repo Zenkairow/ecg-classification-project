@@ -15,7 +15,7 @@ IMAGE_SIZE = 512
 LEARNING_RATE = 1e-4
 NUM_EPOCHS = 20
 NUM_CLASSES = 5
-DATA_DIR = 'data_synthesis/output/signal_targets_final/'
+DATA_DIR = 'data_synthesis/output/output/images/'
 LABELS_FILE = 'data/ptbxl_database.csv'
 MODEL_SAVE_PATH = 'models/classifier_resnet50.pth'
 
