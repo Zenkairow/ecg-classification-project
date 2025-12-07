@@ -16,7 +16,7 @@ LEARNING_RATE = 1e-4
 NUM_EPOCHS = 20
 NUM_CLASSES = 5
 DATA_DIR = 'data_synthesis/output/output/images/'
-LABELS_FILE = 'data/ptbxl_database.csv'
+LABELS_FILE = 'data/train_labels.csv'
 MODEL_SAVE_PATH = 'models/classifier_resnet50.pth'
 
 # --- Dataset Class ---
