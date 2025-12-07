@@ -32,17 +32,15 @@ class ECGImageDataset(Dataset):
             print(f"Error loading CSV: {e}")
             sys.exit(1)
             
-        # Define Class Mapping (String -> Number)
-        self.class_map = {'NORM': 0, 'MI': 1, 'STTC': 2, 'CD': 3, 'HYP': 4}
+        # Dynamic Class Mapping (String -> Number) based on ALL unique labels
+        unique_labels = sorted(self.annotations['label'].unique().tolist())
+        self.class_map = {label: i for i, label in enumerate(unique_labels)}
         
-        # Filter: Keep only rows where label is in our map
-        # (This removes 'Unknown', 'OTHER', or 'NDT' if they exist)
-        original_count = len(self.annotations)
-        self.annotations = self.annotations[self.annotations['label'].isin(self.class_map.keys())]
-        filtered_count = len(self.annotations)
+        # No more filtering - keep all data
+        # self.annotations = self.annotations[self.annotations['label'].isin(self.class_map.keys())]
         
-        print(f"Dataset Loaded. Kept {filtered_count}/{original_count} valid images.")
-        print(f"Classes: {self.class_map}")
+        print(f"Dataset Loaded. Total valid images: {len(self.annotations)}")
+        print(f"Detected {len(unique_labels)} Classes: {self.class_map}")
 
     def __len__(self):
         return len(self.annotations)
@@ -103,10 +101,14 @@ def train_model():
 
     # Model
     print("Initializing ResNet50...")
+    # Dynamic number of classes from dataset
+    num_classes_detected = len(dataset.class_map)
+    print(f"Configuring model for {num_classes_detected} classes...")
+    
     # Use standard weights
     model = models.resnet50(weights='IMAGENET1K_V1')
     num_ftrs = model.fc.in_features
-    model.fc = nn.Linear(num_ftrs, NUM_CLASSES)
+    model.fc = nn.Linear(num_ftrs, num_classes_detected)
     model = model.to(device)
 
     # Loss & Optimizer
