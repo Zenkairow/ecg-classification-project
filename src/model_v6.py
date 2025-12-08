@@ -17,8 +17,8 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe.unsqueeze(0))
 
     def forward(self, x):
-        # x shape: [Batch, Seq_Len, D_Model]
-        # self.pe is [1, 5000, 256]. We need [1, Seq_Len, 256]
+        # Debugging Shapes
+        # print(f"DEBUG PE: x={x.shape}, pe={self.pe.shape}")
         return x + self.pe[:, :x.size(1), :]
 
 class ECGTransformer(nn.Module):
