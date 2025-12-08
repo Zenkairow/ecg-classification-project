@@ -11,7 +11,7 @@ import sys
 
 # --- Configuration ---
 # --- Configuration ---
-BATCH_SIZE = 8
+BATCH_SIZE = 4
 IMAGE_SIZE = 512
 LEARNING_RATE = 1e-4
 NUM_EPOCHS = 20
