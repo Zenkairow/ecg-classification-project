@@ -18,7 +18,7 @@ NUM_EPOCHS = 20
 NUM_CLASSES = 5 # Placeholder, dynamic detection used
 DATA_DIR = 'data_synthesis/output/output/images/'
 CSV_PATH = 'data/train_labels.csv'
-MODEL_SAVE_PATH = 'models/classifier_resnet50_optimized.pth'
+MODEL_SAVE_PATH = 'models/classifier_efficientnet_b4.pth'
 
 # --- Dataset Class ---
 class ECGImageDataset(Dataset):
@@ -127,17 +127,22 @@ def train_model():
     train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
     val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
     
-    # Model
-    print("Initializing ResNet50...")
+    # Model: EfficientNet-B4
+    print("Initializing EfficientNet-B4...")
     num_classes_detected = len(train_dataset_full.class_map)
     print(f"Configuring model for {num_classes_detected} classes...")
     
-    model = models.resnet50(weights='IMAGENET1K_V1')
-    num_ftrs = model.fc.in_features
-    # Add Dropout for regularization
-    model.fc = nn.Sequential(
-        nn.Dropout(0.5),
-        nn.Linear(num_ftrs, num_classes_detected)
+    # Load Pretrained EfficientNet-B4
+    model = models.efficientnet_b4(weights='IMAGENET1K_V1')
+    
+    # Replace Classifier Head
+    # EfficientNet uses 'classifier' (Sequential) instead of 'fc'
+    # Default: (1): Linear(in_features=1792, out_features=1000, bias=True)
+    num_ftrs = model.classifier[1].in_features
+    
+    model.classifier = nn.Sequential(
+        nn.Dropout(p=0.4, inplace=True),
+        nn.Linear(num_ftrs, num_classes_detected),
     )
     model = model.to(device)
 
