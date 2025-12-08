@@ -18,7 +18,8 @@ class PositionalEncoding(nn.Module):
 
     def forward(self, x):
         # x shape: [Batch, Seq_Len, D_Model]
-        return x + self.pe[:, :x.size(1)]
+        # self.pe is [1, 5000, 256]. We need [1, Seq_Len, 256]
+        return x + self.pe[:, :x.size(1), :]
 
 class ECGTransformer(nn.Module):
     def __init__(self, num_classes=50, input_channels=12, d_model=256, nhead=8, num_layers=6, dim_feedforward=512, dropout=0.1):
