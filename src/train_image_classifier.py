@@ -10,14 +10,15 @@ from tqdm import tqdm
 import sys
 
 # --- Configuration ---
+# --- Configuration ---
 BATCH_SIZE = 8
 IMAGE_SIZE = 512
 LEARNING_RATE = 1e-4
 NUM_EPOCHS = 20
-NUM_CLASSES = 5
+NUM_CLASSES = 5 # Placeholder, dynamic detection used
 DATA_DIR = 'data_synthesis/output/output/images/'
 CSV_PATH = 'data/train_labels.csv'
-MODEL_SAVE_PATH = 'models/classifier_resnet50.pth'
+MODEL_SAVE_PATH = 'models/classifier_resnet50_optimized.pth'
 
 # --- Dataset Class ---
 class ECGImageDataset(Dataset):
@@ -33,11 +34,11 @@ class ECGImageDataset(Dataset):
             sys.exit(1)
             
         # Dynamic Class Mapping (String -> Number) based on ALL unique labels
-        unique_labels = sorted(self.annotations['label'].unique().tolist())
-        self.class_map = {label: i for i, label in enumerate(unique_labels)}
+        # Handle case where column might be 'label' or 'diagnostic_superclass'
+        loss_col = 'label' if 'label' in self.annotations.columns else 'diagnostic_superclass'
         
-        # No more filtering - keep all data
-        # self.annotations = self.annotations[self.annotations['label'].isin(self.class_map.keys())]
+        unique_labels = sorted(self.annotations[loss_col].unique().tolist())
+        self.class_map = {label: i for i, label in enumerate(unique_labels)}
         
         print(f"Dataset Loaded. Total valid images: {len(self.annotations)}")
         print(f"Detected {len(unique_labels)} Classes: {self.class_map}")
@@ -46,7 +47,7 @@ class ECGImageDataset(Dataset):
         return len(self.annotations)
 
     def __getitem__(self, index):
-        # 1. Get Filename (Using 'filename' column, NOT 'filename_hr')
+        # 1. Get Filename
         img_name = str(self.annotations.iloc[index]['filename'])
         img_path = os.path.join(self.root_dir, img_name)
         
@@ -54,13 +55,12 @@ class ECGImageDataset(Dataset):
         try:
             image = Image.open(img_path).convert("RGB")
         except FileNotFoundError:
-            # Fallback: Create a dummy black image to prevent training crash
-            # (Better to skip, but this keeps batch size consistent)
-            # print(f"Warning: Missing {img_path}")
+            # Create dummy image for stability
             image = Image.new('RGB', (IMAGE_SIZE, IMAGE_SIZE))
             
-        # 3. Get Label and convert to ID
-        label_str = self.annotations.iloc[index]['label']
+        # 3. Get Label
+        loss_col = 'label' if 'label' in self.annotations.columns else 'diagnostic_superclass'
+        label_str = self.annotations.iloc[index][loss_col]
         label = self.class_map[label_str]
 
         # 4. Transform
@@ -74,49 +74,84 @@ def train_model():
     # Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    
+    # Clear cache
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
-    # Transforms
-    transform = transforms.Compose([
+    # Optimized Transforms (Augmentation)
+    # Note: No Flip (medical meaning), No Rotation > 10deg
+    train_transform = transforms.Compose([
+        transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+        transforms.RandomAffine(degrees=5, translate=(0.05, 0.05), scale=(0.95, 1.05)),
+        transforms.ColorJitter(brightness=0.1, contrast=0.1),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        transforms.RandomErasing(p=0.2, scale=(0.02, 0.1)),
+    ])
+
+    val_transform = transforms.Compose([
         transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
     # Data Loader
-    dataset = ECGImageDataset(csv_file=CSV_PATH, root_dir=DATA_DIR, transform=transform)
+    train_dataset_full = ECGImageDataset(csv_file=CSV_PATH, root_dir=DATA_DIR, transform=None)
     
-    if len(dataset) == 0:
-        print("CRITICAL: Dataset is empty after filtering! Check CSV labels.")
+    if len(train_dataset_full) == 0:
+        print("CRITICAL: Dataset is empty! Check CSV labels.")
         return
 
     # Split 80/20
-    train_size = int(0.8 * len(dataset))
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+    train_size = int(0.8 * len(train_dataset_full))
+    val_size = len(train_dataset_full) - train_size
+    train_subset, val_subset = torch.utils.data.random_split(train_dataset_full, [train_size, val_size])
 
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
+    # Apply specific transforms to subsets
+    class SubsetWrapper(Dataset):
+        def __init__(self, subset, transform):
+            self.subset = subset
+            self.transform = transform
+        def __getitem__(self, idx):
+            x, y = self.subset[idx]
+            if self.transform:
+                x = self.transform(x)
+            return x, y
+        def __len__(self):
+            return len(self.subset)
+
+    train_data = SubsetWrapper(train_subset, train_transform)
+    val_data = SubsetWrapper(val_subset, val_transform)
+
+    train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
+    val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
     
-    print(f"Training on {train_size} images, Validating on {val_size}")
-
     # Model
     print("Initializing ResNet50...")
-    # Dynamic number of classes from dataset
-    num_classes_detected = len(dataset.class_map)
+    num_classes_detected = len(train_dataset_full.class_map)
     print(f"Configuring model for {num_classes_detected} classes...")
     
-    # Use standard weights
     model = models.resnet50(weights='IMAGENET1K_V1')
     num_ftrs = model.fc.in_features
-    model.fc = nn.Linear(num_ftrs, num_classes_detected)
+    # Add Dropout for regularization
+    model.fc = nn.Sequential(
+        nn.Dropout(0.5),
+        nn.Linear(num_ftrs, num_classes_detected)
+    )
     model = model.to(device)
 
-    # Loss & Optimizer
+    # Loss, Optimizer & Scheduler
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    # Weight Decay for L2 Regularization
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+    # Reduce LR if validation loss plateaus
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
 
-    # Loop
-    print(f"Starting training for {NUM_EPOCHS} epochs...")
+    # Training Loop
+    best_val_acc = 0.0
+    print(f"Starting optimized training for {NUM_EPOCHS} epochs...")
+    
     for epoch in range(NUM_EPOCHS):
         print(f"\n--- Epoch {epoch+1}/{NUM_EPOCHS} ---")
         model.train()
@@ -124,23 +159,17 @@ def train_model():
         correct = 0
         total = 0
         
-        # Use TQDM for progress bar
         loop = tqdm(train_loader, desc="Training")
-        
         for data, targets in loop:
-            data = data.to(device)
-            targets = targets.to(device)
+            data, targets = data.to(device), targets.to(device)
 
-            # Forward
             scores = model(data)
             loss = criterion(scores, targets)
 
-            # Backward
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            # Metrics
             running_loss += loss.item()
             _, predictions = scores.max(1)
             correct += (predictions == targets).sum().item()
@@ -149,28 +178,39 @@ def train_model():
             loop.set_postfix(loss=loss.item())
         
         epoch_acc = correct / total if total > 0 else 0
-        epoch_loss = running_loss / len(train_loader) if len(train_loader) > 0 else 0
+        epoch_loss = running_loss / len(train_loader)
         print(f"Epoch {epoch+1} Results -> Avg Loss: {epoch_loss:.4f} | Acc: {epoch_acc:.4f}")
         
-        # Validation Step (Optional but recommended)
+        # Validation
         model.eval()
         val_correct = 0
         val_total = 0
+        val_loss = 0.0
+        
         with torch.no_grad():
             for data, targets in val_loader:
                 data, targets = data.to(device), targets.to(device)
                 scores = model(data)
+                loss = criterion(scores, targets)
+                val_loss += loss.item()
+                
                 _, predictions = scores.max(1)
                 val_correct += (predictions == targets).sum().item()
                 val_total += targets.size(0)
         
         val_acc = val_correct / val_total if val_total > 0 else 0
-        print(f"Validation Acc: {val_acc:.4f}")
+        avg_val_loss = val_loss / len(val_loader)
+        print(f"Validation Acc: {val_acc:.4f} | Val Loss: {avg_val_loss:.4f}")
+        
+        # Step Scheduler
+        scheduler.step(avg_val_loss)
 
-        # Save Checkpoint
-        torch.save(model.state_dict(), MODEL_SAVE_PATH)
+        # Save Best Model
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            print(f"New Best Model! Saving to {MODEL_SAVE_PATH}")
+            torch.save(model.state_dict(), MODEL_SAVE_PATH)
 
 if __name__ == "__main__":
-    # Ensure models dir exists
     os.makedirs("models", exist_ok=True)
     train_model()
