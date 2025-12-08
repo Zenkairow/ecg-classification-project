@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import sys
-from model_v6 import ECGTransformer
+from models.transformer import ECGTransformer
 
 # --- Configuration ---
 BATCH_SIZE = 32  # Signals are lighter than images, can increase BS
