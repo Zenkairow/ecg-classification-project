@@ -37,11 +37,22 @@ class ECGImageDataset(Dataset):
         # Handle case where column might be 'label' or 'diagnostic_superclass'
         loss_col = 'label' if 'label' in self.annotations.columns else 'diagnostic_superclass'
         
-        unique_labels = sorted(self.annotations[loss_col].unique().tolist())
+        # Dynamic Class Mapping (String -> Number) 
+        # Apply grouping FIRST to determine unique grouped labels
+        loss_col = 'label' if 'label' in self.annotations.columns else 'diagnostic_superclass'
+        raw_labels = self.annotations[loss_col].unique().tolist()
+        
+        # Get set of all possible grouped labels
+        grouped_labels = set()
+        for l in raw_labels:
+            grouped_labels.add(self.group_diagnostic_classes(str(l)))
+            
+        unique_labels = sorted(list(grouped_labels))
         self.class_map = {label: i for i, label in enumerate(unique_labels)}
         
         print(f"Dataset Loaded. Total valid images: {len(self.annotations)}")
-        print(f"Detected {len(unique_labels)} Classes: {self.class_map}")
+        print(f"grouping Applied. Reduced from {len(raw_labels)} raw classes to {len(unique_labels)} Clinical Categories.")
+        print(f"Classes: {self.class_map}")
 
     def __len__(self):
         return len(self.annotations)
@@ -60,14 +71,57 @@ class ECGImageDataset(Dataset):
             
         # 3. Get Label
         loss_col = 'label' if 'label' in self.annotations.columns else 'diagnostic_superclass'
-        label_str = self.annotations.iloc[index][loss_col]
-        label = self.class_map[label_str]
+        raw_label = str(self.annotations.iloc[index][loss_col])
+        
+        # Apply Grouping
+        grouped_label = self.group_diagnostic_classes(raw_label)
+        label = self.class_map[grouped_label]
 
         # 4. Transform
         if self.transform:
             image = self.transform(image)
 
         return image, label
+
+    def group_diagnostic_classes(self, label):
+        """
+        Reduces 50 complex classes into ~20 major clinical categories.
+        Logic: Merges granular sub-types while keeping distinct pathologies.
+        """
+        # 1. Myocardial Infarction (MI) - Grouped by Region
+        if label in ['AMI', 'ALMI', 'ASMI', 'INJAL', 'INJAS']: return 'MI_Anterior'
+        if label in ['IMI', 'ILMI', 'IPLMI', 'IPMI', 'INJIL', 'INJIN']: return 'MI_Inferior'
+        if label in ['LMI', 'INJLA', 'PMI']: return 'MI_Lateral'
+        
+        # 2. Ischemia (ST-T Changes)
+        if 'ISC' in label or label == 'NST_': return 'Ischemia'
+        
+        # 3. Bundle Branch Blocks
+        if label in ['CLBBB', 'ILBBB']: return 'LBBB' # Left
+        if label in ['CRBBB', 'IRBBB']: return 'RBBB' # Right
+        if label == 'IVCD': return 'IVCD' # Intraventricular Conduction Delay
+        
+        # 4. AV Blocks
+        if label in ['1AVB', '2AVB', '3AVB']: return 'AV_Block'
+        
+        # 5. Hypertrophy
+        if label in ['LVH', 'LAO/LAE']: return 'Left_Hypertrophy'
+        if label in ['RVH', 'RAO/RAE', 'SEHYP']: return 'Right_Hypertrophy'
+        
+        # 6. Fascicular Blocks
+        if label in ['LAFB', 'LPFB']: return 'Fascicular_Block'
+        
+        # 7. Rhythms (Keep major ones distinct)
+        if label in ['AFIB', 'AFLT']: return 'Atrial_Fibrillation'
+        if label in ['SARRH', 'STACH', 'SBRAD', 'SR']: return 'Sinus_Rhythm' # Group Normal variants
+        if label == 'PACE': return 'Paced'
+        if label in ['PSVT', 'SVT']: return 'SVT'
+        
+        # 8. Others
+        if label == 'NORM': return 'NORM'
+        
+        # Default: Keep original if not grouped (e.g., PVC, DIG, LNGQT)
+        return label
 
 # --- Training Function ---
 def train_model():
