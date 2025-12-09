@@ -11,8 +11,9 @@ import sys
 
 # --- Configuration ---
 # --- Configuration ---
-BATCH_SIZE = 4
-IMAGE_SIZE = 512
+# --- Configuration ---
+BATCH_SIZE = 2 # Reduced for 1024px
+IMAGE_SIZE = 1024 # High Resolution
 LEARNING_RATE = 1e-4
 NUM_EPOCHS = 20
 NUM_CLASSES = 5 # Placeholder, dynamic detection used
