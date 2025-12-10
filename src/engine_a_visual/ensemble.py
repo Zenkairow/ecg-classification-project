@@ -56,7 +56,12 @@ class EnsembleEngine:
         print(f"Loading ResNet-50 (50 Classes) from {path}...")
         model = models.resnet50(weights=None)
         num_ftrs = model.fc.in_features
-        model.fc = nn.Linear(num_ftrs, self.num_classes_50)
+        
+        # Saved model has keys 'fc.1.weight', implying Sequential(Dropout, Linear)
+        model.fc = nn.Sequential(
+            nn.Dropout(0.5), # Probability doesn't affect weight loading
+            nn.Linear(num_ftrs, self.num_classes_50)
+        )
         
         try:
             state_dict = torch.load(path, map_location=self.device)
