@@ -30,16 +30,19 @@ def group_diagnostic_classes(label):
     if label in ['IMI', 'ILMI', 'IPLMI', 'IPMI', 'INJIL', 'INJIN']: return 'MI_Inferior'
     if label in ['LMI', 'INJLA', 'PMI']: return 'MI_Lateral'
     
-    # 2. Ischemia
-    if 'ISC' in label or label == 'NST_': return 'Ischemia'
+    # 2. Ischemia & ST Changes (Split)
+    if 'ISC' in label: return 'Ischemia'
+    if label == 'NST_': return 'NonSpecific_ST'
     
     # 3. Bundle Branch Blocks
     if label in ['CLBBB', 'ILBBB']: return 'LBBB'
     if label in ['CRBBB', 'IRBBB']: return 'RBBB'
     if label == 'IVCD': return 'IVCD'
     
-    # 4. AV Blocks
-    if label in ['1AVB', '2AVB', '3AVB']: return 'AV_Block'
+    # 4. AV Blocks (Split by severity)
+    if label == '1AVB': return 'AV_Block_1st_Deg'
+    if label == '2AVB': return 'AV_Block_2nd_Deg'
+    if label == '3AVB': return 'AV_Block_3rd_Deg'
     
     # 5. Hypertrophy
     if label in ['LVH', 'LAO/LAE']: return 'Left_Hypertrophy'
@@ -111,25 +114,34 @@ class ECGSignalDataset(Dataset):
         signal_tensor = torch.zeros((NUM_LEADS, self.seq_len)).float() # Default
         
         try:
-            # Load
-            signal = np.load(signal_path) # Expected [12, seq_len] or [seq_len, 12]
+            # Load Signal
+            signal = np.load(signal_path) # [12, L] or [L, 12]
             
-            # Align Dimensions
+            # Align Dimensions -> [12, L]
             if signal.shape[0] != NUM_LEADS and signal.shape[1] == NUM_LEADS:
                 signal = signal.T 
-            
-            # Check length matches detected seq_len
+
+            # --- RESAMPLING / STANDARDIZATION ---
+            # We enforce consistency. If signal != self.seq_len, we resample.
+            # This handles mixed 100Hz/500Hz datasets correctly.
             current_len = signal.shape[1]
+            
             if current_len != self.seq_len:
-                # Resize/Pad/Crop logic if needed. For now, we assume consistency.
-                # If mismatch is small, we crop/pad.
-                if current_len > self.seq_len:
-                    signal = signal[:, :self.seq_len]
-                else:
-                    pad_len = self.seq_len - current_len
-                    signal = np.pad(signal, ((0,0), (0, pad_len)))
+                # Use linear interpolation for efficiency (and PyTorch compatibility later)
+                # x_old = np.linspace(0, 1, current_len)
+                # x_new = np.linspace(0, 1, self.seq_len)
+                # target_signal = np.zeros((NUM_LEADS, self.seq_len))
+                # for lead in range(NUM_LEADS):
+                #     target_signal[lead] = np.interp(x_new, x_old, signal[lead])
+                # signal = target_signal
                 
-            # Normalize (Z-score per lead)
+                # Faster approach using scipy or simple expansion
+                # Here we use a simple resize logic via torch interpolation (GPU ready logic, but done on CPU here)
+                sig_t = torch.tensor(signal).unsqueeze(0) # [1, 12, L]
+                sig_t = torch.nn.functional.interpolate(sig_t, size=self.seq_len, mode='linear', align_corners=False)
+                signal = sig_t.squeeze(0).numpy()
+            
+            # Normalize (Z-score)
             mean = np.mean(signal, axis=1, keepdims=True)
             std = np.std(signal, axis=1, keepdims=True)
             std[std == 0] = 1.0 # Protect division
