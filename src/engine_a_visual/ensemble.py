@@ -95,12 +95,24 @@ class EnsembleEngine:
         return model
 
     def predict(self, image_path):
+        """
+        Wrapper for filepaths.
+        """
         if not os.path.exists(image_path):
             print("Image not found.")
-            return None
+            return None, 0.0
             
         img = Image.open(image_path).convert('RGB')
-        
+        return self.predict_pil(img)
+
+    def predict_pil(self, img):
+        """
+        Core inference logic accepting a PIL Image object.
+        Optimized for Service calls (no disk I/O).
+        """
+        if img.mode != 'RGB':
+             img = img.convert('RGB')
+             
         # --- ResNet Prediction (512px) ---
         t_resnet = transforms.Compose([
             transforms.Resize((IMAGE_SIZE_RESNET, IMAGE_SIZE_RESNET)),
