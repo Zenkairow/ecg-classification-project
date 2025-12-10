@@ -10,19 +10,60 @@ import sys
 from models.transformer import ECGTransformer
 
 # --- Configuration ---
-BATCH_SIZE = 32  # Signals are lighter than images, can increase BS
-SEQ_LEN = 1000   # 10 seconds @ 100Hz
+BATCH_SIZE = 16  # Reduced BS for larger models/sequences
 NUM_LEADS = 12
 LEARNING_RATE = 1e-4
-NUM_EPOCHS = 50  # Transformers need more epochs
-DATA_DIR = 'data_synthesis/output/output/signals/' # Assumed path for .npy files
+NUM_EPOCHS = 50 
+DATA_DIR = 'data_synthesis/output/output/signals/'
 CSV_PATH = 'data/train_labels.csv'
-MODEL_SAVE_PATH = 'models/signal_transformer_v6.pth'
+MODEL_SAVE_PATH = 'models/signal_transformer_v6_best.pth'
+
+# --- Clinical Taxonomy ---
+def group_diagnostic_classes(label):
+    """
+    Reduces 50 complex classes into ~20 major clinical categories.
+    Consistency with Engine A.
+    """
+    label = str(label)
+    # 1. Myocardial Infarction (MI)
+    if label in ['AMI', 'ALMI', 'ASMI', 'INJAL', 'INJAS']: return 'MI_Anterior'
+    if label in ['IMI', 'ILMI', 'IPLMI', 'IPMI', 'INJIL', 'INJIN']: return 'MI_Inferior'
+    if label in ['LMI', 'INJLA', 'PMI']: return 'MI_Lateral'
+    
+    # 2. Ischemia
+    if 'ISC' in label or label == 'NST_': return 'Ischemia'
+    
+    # 3. Bundle Branch Blocks
+    if label in ['CLBBB', 'ILBBB']: return 'LBBB'
+    if label in ['CRBBB', 'IRBBB']: return 'RBBB'
+    if label == 'IVCD': return 'IVCD'
+    
+    # 4. AV Blocks
+    if label in ['1AVB', '2AVB', '3AVB']: return 'AV_Block'
+    
+    # 5. Hypertrophy
+    if label in ['LVH', 'LAO/LAE']: return 'Left_Hypertrophy'
+    if label in ['RVH', 'RAO/RAE', 'SEHYP']: return 'Right_Hypertrophy'
+    
+    # 6. Fascicular Blocks
+    if label in ['LAFB', 'LPFB']: return 'Fascicular_Block'
+    
+    # 7. Rhythms
+    if label in ['AFIB', 'AFLT']: return 'Atrial_Fibrillation'
+    if label in ['SARRH', 'STACH', 'SBRAD', 'SR']: return 'Sinus_Rhythm'
+    if label == 'PACE': return 'Paced'
+    if label in ['PSVT', 'SVT']: return 'SVT'
+    
+    # 8. Others
+    if label == 'NORM': return 'NORM'
+    
+    return label
 
 # --- Dataset Class ---
 class ECGSignalDataset(Dataset):
-    def __init__(self, csv_file, root_dir):
+    def __init__(self, csv_file, root_dir, detected_seq_len=None):
         self.root_dir = root_dir
+        self.seq_len = detected_seq_len
         
         # Load CSV
         try:
@@ -31,21 +72,28 @@ class ECGSignalDataset(Dataset):
             print(f"Error loading CSV: {e}")
             sys.exit(1)
             
-        # Class Mapping
+        # Class Mapping (Grouped)
         loss_col = 'label' if 'label' in self.annotations.columns else 'diagnostic_superclass'
-        unique_labels = sorted(self.annotations[loss_col].unique().tolist())
-        self.class_map = {label: i for i, label in enumerate(unique_labels)}
+        
+        # Gather all grouped labels
+        unique_groups = set()
+        for raw in self.annotations[loss_col].unique():
+            unique_groups.add(group_diagnostic_classes(raw))
+            
+        self.unique_labels = sorted(list(unique_groups))
+        self.class_map = {label: i for i, label in enumerate(self.unique_labels)}
         
         print(f"Signal Dataset Loaded. Total samples: {len(self.annotations)}")
-        print(f"Detected {len(unique_labels)} Classes found.")
+        print(f"Clinical Taxonomy Applied: {len(self.unique_labels)} Classes.")
+        print(f"Classes: {self.unique_labels}")
 
     def __len__(self):
         return len(self.annotations)
 
     def __getitem__(self, index):
-        # 1. Get Filename (Convert .png to .npy if needed)
-        # CSV has 'sample_123.png'. We need 'sample_123.npy'
-        base_name = str(self.annotations.iloc[index]['filename'])
+        # 1. Get Filename 
+        row = self.annotations.iloc[index]
+        base_name = str(row['filename'])
         if base_name.endswith('.png'):
             base_name = base_name.replace('.png', '.npy')
         elif not base_name.endswith('.npy'):
@@ -53,48 +101,84 @@ class ECGSignalDataset(Dataset):
             
         signal_path = os.path.join(self.root_dir, base_name)
         
-        # 2. Load Signal
+        # 2. Get Label (Grouped)
+        loss_col = 'label' if 'label' in self.annotations.columns else 'diagnostic_superclass'
+        raw_label = str(row[loss_col])
+        grouped = group_diagnostic_classes(raw_label)
+        label_id = self.class_map[grouped]
+        
+        # 3. Load Signal
+        signal_tensor = torch.zeros((NUM_LEADS, self.seq_len)).float() # Default
+        
         try:
-            # Expecting shape [12, 1000] or [1000, 12]
-            signal = np.load(signal_path)
+            # Load
+            signal = np.load(signal_path) # Expected [12, seq_len] or [seq_len, 12]
             
-            # Ensure shape is [12, 1000] for our model
-            if signal.shape[0] != 12 and signal.shape[1] == 12:
+            # Align Dimensions
+            if signal.shape[0] != NUM_LEADS and signal.shape[1] == NUM_LEADS:
                 signal = signal.T 
+            
+            # Check length matches detected seq_len
+            current_len = signal.shape[1]
+            if current_len != self.seq_len:
+                # Resize/Pad/Crop logic if needed. For now, we assume consistency.
+                # If mismatch is small, we crop/pad.
+                if current_len > self.seq_len:
+                    signal = signal[:, :self.seq_len]
+                else:
+                    pad_len = self.seq_len - current_len
+                    signal = np.pad(signal, ((0,0), (0, pad_len)))
                 
-            # Basic Normalization (Z-score)
-            # Avoid division by zero
+            # Normalize (Z-score per lead)
             mean = np.mean(signal, axis=1, keepdims=True)
             std = np.std(signal, axis=1, keepdims=True)
-            std[std == 0] = 1.0
+            std[std == 0] = 1.0 # Protect division
             signal = (signal - mean) / std
             
-            # Tensor conversion
             signal_tensor = torch.from_numpy(signal).float()
             
-        except FileNotFoundError:
-            # print(f"Warning: Missing signal file {signal_path}")
-            # Return dummy zero signal
-            signal_tensor = torch.zeros((NUM_LEADS, SEQ_LEN)).float()
         except Exception as e:
-            print(f"Error loading {signal_path}: {e}")
-            signal_tensor = torch.zeros((NUM_LEADS, SEQ_LEN)).float()
+            # print(f"Error loading {signal_path}: {e}")
+            pass
             
-        # 3. Get Label
-        loss_col = 'label' if 'label' in self.annotations.columns else 'diagnostic_superclass'
-        label_str = self.annotations.iloc[index][loss_col]
-        label = self.class_map[label_str]
+        return signal_tensor, label_id
 
-        return signal_tensor, label
+def detect_sequence_length(root_dir, csv_path):
+    """
+    Peeks at the first valid .npy file to determine SEQ_LEN (1000 vs 5000).
+    """
+    print("Detecting Signal Sequence Length...")
+    df = pd.read_csv(csv_path)
+    
+    for i in range(min(50, len(df))): # Try first 50 entries
+        fname = str(df.iloc[i]['filename']).replace('.png', '.npy')
+        fpath = os.path.join(root_dir, fname)
+        if os.path.exists(fpath):
+            try:
+                sig = np.load(fpath)
+                # Find the larger dimension that isn't 12 (or if 12, assume the other is length)
+                shape = sig.shape
+                length = max(shape) if min(shape) == 12 else shape[0] # Fallback logic
+                print(f"Detected Shape: {shape} -> Using SEQ_LEN = {length}")
+                return length
+            except:
+                continue
+    
+    print("Warning: Could not detect length. Defaulting to 1000.")
+    return 1000
 
 # --- Training Function ---
 def train_model():
     # Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    
+    # 1. Detect Length
+    seq_len = detect_sequence_length(DATA_DIR, CSV_PATH)
+    print(f"Training Config: SEQ_LEN={seq_len}, BATCH_SIZE={BATCH_SIZE}, EPOCHS={NUM_EPOCHS}")
 
-    # Dataset
-    dataset = ECGSignalDataset(csv_file=CSV_PATH, root_dir=DATA_DIR)
+    # 2. Dataset
+    dataset = ECGSignalDataset(csv_file=CSV_PATH, root_dir=DATA_DIR, detected_seq_len=seq_len)
     
     if len(dataset) == 0:
         print("CRITICAL: Dataset is empty!")
@@ -108,22 +192,32 @@ def train_model():
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
     
-    print(f"Training on {train_size} signals, Validating on {val_size}")
-
-    # Model (v6 Transformer)
-    print("Initializing ECGTransformer (v6)...")
+    # 3. Model
+    print("Initializing ECGTransformer (v6 High-Spec)...")
     num_classes = len(dataset.class_map)
-    model = ECGTransformer(num_classes=num_classes, input_channels=NUM_LEADS)
+    
+    # High Quality settings: d_model=512 (if seq_len is huge, we might need to reduce batch size)
+    d_model = 512
+    if seq_len > 2000:
+        d_model = 256 # Save memory for very long sequences
+        
+    model = ECGTransformer(
+        num_classes=num_classes, 
+        input_channels=NUM_LEADS,
+        seq_len=seq_len,
+        d_model=d_model, 
+        nhead=8
+    )
     model = model.to(device)
 
-    # Optimization
+    # 4. Optimization
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=NUM_EPOCHS)
 
-    # Loop
+    # 5. Training Loop
     best_val_acc = 0.0
-    print(f"Starting Signal training for {NUM_EPOCHS} epochs...")
+    print(f"Starting Signal Training...")
     
     for epoch in range(NUM_EPOCHS):
         print(f"\n--- Epoch {epoch+1}/{NUM_EPOCHS} ---")

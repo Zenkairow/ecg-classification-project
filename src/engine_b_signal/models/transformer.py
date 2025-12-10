@@ -22,16 +22,18 @@ class PositionalEncoding(nn.Module):
         return x + self.pe[:, :x.size(1), :]
 
 class ECGTransformer(nn.Module):
-    def __init__(self, num_classes=50, input_channels=12, d_model=256, nhead=8, num_layers=6, dim_feedforward=512, dropout=0.1):
+    def __init__(self, num_classes=50, input_channels=12, seq_len=1000, d_model=256, nhead=8, num_layers=6, dim_feedforward=512, dropout=0.1):
         super(ECGTransformer, self).__init__()
         
+        self.seq_len = seq_len
+        
         # 1. Feature Projection (12 Leads -> d_model)
-        # We treat the 1000 time steps as the sequence length.
-        # Input shape expected: [Batch, 12, 1000] -> Permute to [Batch, 1000, 12]
+        # We treat the seq_len time steps as the sequence length.
+        # Input shape expected: [Batch, 12, seq_len] -> Permute to [Batch, seq_len, 12]
         self.input_projection = nn.Linear(input_channels, d_model)
         
         # 2. Positional Encoding
-        self.pos_encoder = PositionalEncoding(d_model, max_len=1000)
+        self.pos_encoder = PositionalEncoding(d_model, max_len=seq_len)
         
         # 3. Transformer Encoder
         encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout, batch_first=True)
