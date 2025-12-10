@@ -179,8 +179,13 @@ def detect_sequence_length(root_dir, csv_path):
     print("Warning: Could not detect length. Defaulting to 1000.")
     return 1000
 
+import argparse
+
+# ... (imports remain the same, ensure they are compatible)
+CHECKPOINT_PATH = 'models/checkpoint_latest.pth'
+
 # --- Training Function ---
-def train_model():
+def train_model(resume=False):
     # Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -208,10 +213,9 @@ def train_model():
     print("Initializing ECGTransformer (v6 High-Spec)...")
     num_classes = len(dataset.class_map)
     
-    # High Quality settings: d_model=512 (if seq_len is huge, we might need to reduce batch size)
     d_model = 512
     if seq_len > 2000:
-        d_model = 256 # Save memory for very long sequences
+        d_model = 256
         
     model = ECGTransformer(
         num_classes=num_classes, 
@@ -227,11 +231,26 @@ def train_model():
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=NUM_EPOCHS)
 
-    # 5. Training Loop
+    # 5. Resume Logic
+    start_epoch = 0
     best_val_acc = 0.0
-    print(f"Starting Signal Training...")
     
-    for epoch in range(NUM_EPOCHS):
+    if resume and os.path.exists(CHECKPOINT_PATH):
+        print(f"Resuming from checkpoint: {CHECKPOINT_PATH}")
+        checkpoint = torch.load(CHECKPOINT_PATH, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        best_val_acc = checkpoint.get('best_val_acc', 0.0)
+        print(f"Resumed from Epoch {start_epoch}")
+    elif resume:
+        print(f"Checkpoint {CHECKPOINT_PATH} not found. Starting from scratch.")
+
+    # 6. Training Loop
+    print(f"Starting Signal Training from Epoch {start_epoch+1}/{NUM_EPOCHS}...")
+    
+    for epoch in range(start_epoch, NUM_EPOCHS):
         print(f"\n--- Epoch {epoch+1}/{NUM_EPOCHS} ---")
         model.train()
         running_loss = 0.0
@@ -284,11 +303,29 @@ def train_model():
         
         scheduler.step()
         
+        # Save Best Model
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             print(f"New Best Signal Model! Saving to {MODEL_SAVE_PATH}")
             torch.save(model.state_dict(), MODEL_SAVE_PATH)
+            
+        # Save Regular Checkpoint (Every Epoch)
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
+            'best_val_acc': best_val_acc,
+            'loss': loss.item()
+        }
+        torch.save(checkpoint, CHECKPOINT_PATH)
+        print(f"Checkpoint saved to {CHECKPOINT_PATH}")
 
 if __name__ == "__main__":
     os.makedirs("models", exist_ok=True)
-    train_model()
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--resume", action="store_true", help="Resume from checkpoint_latest.pth")
+    args = parser.parse_args()
+    
+    train_model(resume=args.resume)
