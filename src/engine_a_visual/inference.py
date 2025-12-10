@@ -17,23 +17,64 @@ def load_model_and_classes(model_path, csv_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # 1. Rebuild Class Map
+    # 1. Rebuild Class Map (Must match Training Logic!)
     if not os.path.exists(csv_path):
         print(f"Error: Labels CSV not found at {csv_path}. Cannot decode classes.")
         sys.exit(1)
     
     df = pd.read_csv(csv_path)
-    # Handle column names
     col_name = 'label' if 'label' in df.columns else 'diagnostic_superclass'
-    if col_name not in df.columns:
-         print("Error: CSV must have a 'label' or 'diagnostic_superclass' column.")
-         sys.exit(1)
+    
+    raw_labels = df[col_name].unique().tolist()
+    
+    # Apply Grouping
+    grouped_labels = set()
+    for l in raw_labels:
+        grouped_labels.add(group_diagnostic_classes(str(l)))
         
-    unique_labels = sorted(df[col_name].unique().tolist())
+    unique_labels = sorted(list(grouped_labels))
     class_map = {i: label for i, label in enumerate(unique_labels)}
     num_classes = len(unique_labels)
     
-    print(f"Detected {num_classes} classes from CSV.")
+    print(f"Detected {len(raw_labels)} raw classes -> Grouped into {num_classes} Clinical Categories.")
+
+def group_diagnostic_classes(label):
+    """
+    Validation Logic: Must match train_visual_model.py exactly.
+    """
+    # 1. Myocardial Infarction (MI)
+    if label in ['AMI', 'ALMI', 'ASMI', 'INJAL', 'INJAS']: return 'MI_Anterior'
+    if label in ['IMI', 'ILMI', 'IPLMI', 'IPMI', 'INJIL', 'INJIN']: return 'MI_Inferior'
+    if label in ['LMI', 'INJLA', 'PMI']: return 'MI_Lateral'
+    
+    # 2. Ischemia
+    if 'ISC' in label or label == 'NST_': return 'Ischemia'
+    
+    # 3. Bundle Branch Blocks
+    if label in ['CLBBB', 'ILBBB']: return 'LBBB'
+    if label in ['CRBBB', 'IRBBB']: return 'RBBB'
+    if label == 'IVCD': return 'IVCD'
+    
+    # 4. AV Blocks
+    if label in ['1AVB', '2AVB', '3AVB']: return 'AV_Block'
+    
+    # 5. Hypertrophy
+    if label in ['LVH', 'LAO/LAE']: return 'Left_Hypertrophy'
+    if label in ['RVH', 'RAO/RAE', 'SEHYP']: return 'Right_Hypertrophy'
+    
+    # 6. Fascicular Blocks
+    if label in ['LAFB', 'LPFB']: return 'Fascicular_Block'
+    
+    # 7. Rhythms
+    if label in ['AFIB', 'AFLT']: return 'Atrial_Fibrillation'
+    if label in ['SARRH', 'STACH', 'SBRAD', 'SR']: return 'Sinus_Rhythm'
+    if label == 'PACE': return 'Paced'
+    if label in ['PSVT', 'SVT']: return 'SVT'
+    
+    # 8. Others
+    if label == 'NORM': return 'NORM'
+    
+    return label
 
     # 2. Initialize Model Architecture
     # Try loading as EfficientNet first, if it fails (state dict mismatch), fallback or default
