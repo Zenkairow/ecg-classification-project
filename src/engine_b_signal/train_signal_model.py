@@ -227,7 +227,9 @@ def train_model(resume=False):
     model = model.to(device)
 
     # 4. Optimization
-    criterion = nn.CrossEntropyLoss()
+    # STRATEGY 3: Label Smoothing (Prevents model from being "Arrogant" / 100% confident)
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=NUM_EPOCHS)
 
@@ -247,8 +249,26 @@ def train_model(resume=False):
     elif resume:
         print(f"Checkpoint {CHECKPOINT_PATH} not found. Starting from scratch.")
 
+    # --- HELPER: MIXUP ---
+    def mixup_data(x, y, alpha=0.2):
+        '''Returns mixed inputs, pairs of targets, and lambda'''
+        if alpha > 0:
+            lam = np.random.beta(alpha, alpha)
+        else:
+            lam = 1
+
+        batch_size = x.size(0)
+        index = torch.randperm(batch_size).to(device)
+
+        mixed_x = lam * x + (1 - lam) * x[index, :]
+        y_a, y_b = y, y[index]
+        return mixed_x, y_a, y_b, lam
+
+    def mixup_criterion(criterion, pred, y_a, y_b, lam):
+        return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+
     # 6. Training Loop
-    print(f"Starting Signal Training from Epoch {start_epoch+1}/{NUM_EPOCHS}...")
+    print(f"Starting Signal Training (w/ Mixup & Smoothing) from Epoch {start_epoch+1}/{NUM_EPOCHS}...")
     
     for epoch in range(start_epoch, NUM_EPOCHS):
         print(f"\n--- Epoch {epoch+1}/{NUM_EPOCHS} ---")
@@ -261,9 +281,13 @@ def train_model(resume=False):
         for data, targets in loop:
             data, targets = data.to(device), targets.to(device)
             
+            # STRATEGY 1: Mixup
+            # We apply mixup to inputs. The model sees a "blend" of two signals.
+            inputs, targets_a, targets_b, lam = mixup_data(data, targets, alpha=0.2)
+            
             # Forward
-            scores = model(data)
-            loss = criterion(scores, targets)
+            scores = model(inputs)
+            loss = mixup_criterion(criterion, scores, targets_a, targets_b, lam)
             
             # Backward
             optimizer.zero_grad()
@@ -271,17 +295,20 @@ def train_model(resume=False):
             optimizer.step()
             
             running_loss += loss.item()
+            
+            # Accuracy Calculation (Approximate for Mixup: check against dominant label)
             _, predictions = scores.max(1)
-            correct += (predictions == targets).sum().item()
+            # We count correct if it matches EITHER of the mixed labels (weighted count would be better but this is for display)
+            correct += (lam * (predictions == targets_a).float() + (1 - lam) * (predictions == targets_b).float()).sum().item()
             total += targets.size(0)
             
             loop.set_postfix(loss=loss.item())
             
         epoch_acc = correct / total if total > 0 else 0
         epoch_loss = running_loss / len(train_loader)
-        print(f"Epoch {epoch+1} Results -> Loss: {epoch_loss:.4f} | Acc: {epoch_acc:.4f}")
+        print(f"Epoch {epoch+1} Results -> Loss: {epoch_loss:.4f} | Acc: {epoch_acc:.4f} (Mixup)")
         
-        # Validation
+        # Validation (No Mixup - Pure Clean Validation)
         model.eval()
         val_correct = 0
         val_total = 0
