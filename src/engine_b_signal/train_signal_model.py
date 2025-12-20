@@ -7,18 +7,18 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import sys
-from models.resnet1d import ResNet1D
+from models.resnet1d_se import SEResNet1D
 
 # --- Configuration ---
-BATCH_SIZE = 32  # ResNet is efficient, we can probably handle 32
-# SEQ_LEN will be detected
+BATCH_SIZE = 32  # Standard BS
+# SEQ_LEN will be detected (5000 approx)
 NUM_LEADS = 12
-LEARNING_RATE = 1e-4 # ResNets allow slightly higher LR than transformers, but 1e-4 is safe
+LEARNING_RATE = 1e-4 
 NUM_EPOCHS = 50 
 DATA_DIR = 'data_synthesis/output/output/signals/'
 CSV_PATH = 'data/train_labels.csv'
-MODEL_SAVE_PATH = 'models/signal_resnet1d_best.pth'
-CHECKPOINT_PATH = 'models/checkpoint_resnet.pth'
+MODEL_SAVE_PATH = 'models/signal_seresnet50_best.pth'
+CHECKPOINT_PATH = 'models/checkpoint_seresnet.pth'
 
 # --- Clinical Taxonomy ---
 def group_diagnostic_classes(label):
@@ -212,11 +212,11 @@ def train_model(resume=False):
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
     
     # 3. Model
-    print("Initializing ResNet1D (ResNet-34)...")
+    print("Initializing SE-ResNet-50 (1D) with Squeeze-and-Excitation...")
     num_classes = len(dataset.class_map)
     
-    # ResNet doesn't require fixed seq_len or d_model, just input channels
-    model = ResNet1D(num_classes=num_classes, input_channels=NUM_LEADS)
+    # SE-ResNet-50 for 500Hz High-Res Signal
+    model = SEResNet1D(num_classes=num_classes, input_channels=NUM_LEADS)
     model = model.to(device)
 
     # 4. Optimization
