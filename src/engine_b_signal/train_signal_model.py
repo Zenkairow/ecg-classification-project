@@ -7,16 +7,18 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import sys
-from models.transformer import ECGTransformer
+from models.resnet1d import ResNet1D
 
 # --- Configuration ---
-BATCH_SIZE = 16  # Reduced BS for larger models/sequences
+BATCH_SIZE = 32  # ResNet is efficient, we can probably handle 32
+# SEQ_LEN will be detected
 NUM_LEADS = 12
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 1e-4 # ResNets allow slightly higher LR than transformers, but 1e-4 is safe
 NUM_EPOCHS = 50 
 DATA_DIR = 'data_synthesis/output/output/signals/'
 CSV_PATH = 'data/train_labels.csv'
-MODEL_SAVE_PATH = 'models/signal_transformer_v6_best.pth'
+MODEL_SAVE_PATH = 'models/signal_resnet1d_best.pth'
+CHECKPOINT_PATH = 'models/checkpoint_resnet.pth'
 
 # --- Clinical Taxonomy ---
 def group_diagnostic_classes(label):
@@ -210,20 +212,11 @@ def train_model(resume=False):
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
     
     # 3. Model
-    print("Initializing ECGTransformer (v6 High-Spec)...")
+    print("Initializing ResNet1D (ResNet-34)...")
     num_classes = len(dataset.class_map)
     
-    d_model = 512
-    if seq_len > 2000:
-        d_model = 256
-        
-    model = ECGTransformer(
-        num_classes=num_classes, 
-        input_channels=NUM_LEADS,
-        seq_len=seq_len,
-        d_model=d_model, 
-        nhead=8
-    )
+    # ResNet doesn't require fixed seq_len or d_model, just input channels
+    model = ResNet1D(num_classes=num_classes, input_channels=NUM_LEADS)
     model = model.to(device)
 
     # 4. Optimization
