@@ -50,9 +50,20 @@ def prepare_stage2_data():
         
         group = group_diagnostic_classes(raw_label)
         
-        # 1. Filter Normal
         if group in IGNORE_CLASSES:
             stats['Ignored'] += 1
+            continue
+            
+        # 1.5. Check Filename Validity
+        # Some rows might have missing filenames
+        f_hr = row.get('filename_hr')
+        f_lr = row.get('filename_lr')
+        
+        has_hr = isinstance(f_hr, str) and len(f_hr) > 0 and str(f_hr).lower() != 'nan'
+        has_lr = isinstance(f_lr, str) and len(f_lr) > 0 and str(f_lr).lower() != 'nan'
+        
+        if not (has_hr or has_lr):
+            stats['MissingFile'] = stats.get('MissingFile', 0) + 1
             continue
             
         # 2. Map to 0/1
@@ -99,6 +110,7 @@ def prepare_stage2_data():
     print(f"  - Class 0 (Rhythm):    {stats['Rhythm']}")
     print(f"  - Class 1 (Structure): {stats['Structure']}")
     print(f"  - Ignored (Normal):    {stats['Ignored']}")
+    print(f"  - Missing Filename:    {stats.get('MissingFile', 0)}")
     print(f"  - Unknown (Dropped):   {stats['Unknown']}")
 
 if __name__ == "__main__":
