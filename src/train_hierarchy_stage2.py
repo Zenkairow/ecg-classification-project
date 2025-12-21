@@ -83,7 +83,12 @@ class RouterDataset(Dataset):
         row = self.data_frame.iloc[idx]
         
         # Load Signal
-        fname = row.get('filename_hr', row.get('filename_lr'))
+        # Load Signal
+        # Prioritize filename_hr
+        fname = row.get('filename_hr')
+        if pd.isna(fname) or fname == 'nan' or fname == '':
+             fname = row.get('filename_lr')
+             
         if not isinstance(fname, str):
              fname = str(fname)
         
@@ -91,10 +96,16 @@ class RouterDataset(Dataset):
         if not file_path.endswith('.npy'):
              file_path += '.npy'
                  
-        try:
-            signal = np.load(file_path)
-        except Exception:
-            signal = np.zeros((12, self.seq_len))
+        # REMOVED SILENT TRY-EXCEPT BLOCK
+        # We want this to fail LOUDLY if file is missing
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Signal file missing: {file_path}")
+            
+        signal = np.load(file_path)
+        
+        # Check for zero content (rare corruption check)
+        if np.all(signal == 0):
+             print(f"WARNING: Zero signal found at {file_path}")
             
         if signal.shape[0] != 12 and signal.shape[1] == 12:
             signal = signal.T

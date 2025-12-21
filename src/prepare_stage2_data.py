@@ -73,8 +73,16 @@ def prepare_stage2_data():
             
         # Add to new list
         # Keep necessary columns: filename/path and the new label
-        new_row = row.to_dict()
-        new_row['router_label'] = router_label
+        # Explicitly copy relevant columns to avoid ambiguity
+        new_row = {
+            'router_label': router_label,
+            'filename_hr': row.get('filename_hr', ''),
+            'filename_lr': row.get('filename_lr', ''),
+            'age': row.get('age', 0),
+            'sex': row.get('sex', 0),
+            'label': row.get('label', ''),
+            'diagnostic_superclass': row.get('diagnostic_superclass', '')
+        }
         filtered_rows.append(new_row)
         
     # Create new DF
