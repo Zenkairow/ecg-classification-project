@@ -15,7 +15,7 @@ sys.path.append(project_root)
 sys.path.append(os.path.join(project_root, 'src', 'engine_b_signal'))
 
 # Imports from existing codebase
-from src.engine_b_signal.train_signal_model import ECGSignalDataset, CSV_PATH, DATA_DIR, mixup_data, mixup_criterion, NUM_LEADS
+from src.engine_b_signal.train_signal_model import ECGSignalDataset, CSV_PATH, DATA_DIR, NUM_LEADS
 from src.engine_b_signal.models.resnet1d import ResNet1D
 from src.engine_b_signal.models.resnet1d_se import SEResNet34
 
@@ -23,6 +23,25 @@ from src.engine_b_signal.models.resnet1d_se import SEResNet34
 BATCH_SIZE = 32
 EPOCHS = 15 # Fast training for specialists
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# --- HELPER: MIXUP (Inlined to avoid import issues) ---
+def mixup_data(x, y, alpha=0.2):
+    '''Returns mixed inputs, pairs of targets, and lambda'''
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1
+
+    batch_size = x.size(0)
+    index = torch.randperm(batch_size).to(DEVICE)
+
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
+
+def mixup_criterion(criterion, pred, y_a, y_b, lam):
+    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+# -----------------------------------------------------
 
 # Specialist Definitions
 # Leads: I, II, III, aVR, aVL, aVF, V1, V2, V3, V4, V5, V6
