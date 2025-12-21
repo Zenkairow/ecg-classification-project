@@ -168,8 +168,10 @@ def train_gatekeeper():
                 # Map Labels
                 binary_labels = [0 if l.item() in normal_indices else 1 for l in original_labels]
                 
+                # VALIDATION AT 0.14 THRESHOLD (Calibrated for >99% Recall)
+                # Default was 0.5, but we know we need 0.14 to be safe.
                 outputs = model(inputs)
-                preds = torch.sigmoid(outputs) > 0.5 # Threshold 0.5
+                preds = torch.sigmoid(outputs) > 0.14 # CALIBRATED THRESHOLD
                 preds = preds.long().squeeze(1).cpu().numpy()
                 
                 all_preds.extend(preds)
