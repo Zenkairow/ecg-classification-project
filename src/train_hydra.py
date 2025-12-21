@@ -116,7 +116,8 @@ class HydraNet(nn.Module):
         return out
 
 def train_hydra():
-    print("--- Starting HydraNet Training ---")
+    print("--- Starting HydraNet Training (Fresh Initialization) ---")
+    os.makedirs("models", exist_ok=True)
     
     # Data
     dataset = ECGSignalDataset(csv_file=CSV_PATH, root_dir=DATA_DIR, detected_seq_len=5000)
