@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import sys
-from models.resnet1d_se import SEResNet1D
+from models.resnet1d_se import SEResNet34
 
 # --- Configuration ---
 BATCH_SIZE = 32  # Standard BS
@@ -17,8 +17,8 @@ LEARNING_RATE = 1e-4
 NUM_EPOCHS = 50 
 DATA_DIR = 'data_synthesis/output/output/signals/'
 CSV_PATH = 'data/train_labels.csv'
-MODEL_SAVE_PATH = 'models/signal_seresnet50_best.pth'
-CHECKPOINT_PATH = 'models/checkpoint_seresnet.pth'
+MODEL_SAVE_PATH = 'models/signal_seresnet34_best.pth'
+CHECKPOINT_PATH = 'models/checkpoint_seresnet34.pth'
 
 # --- Clinical Taxonomy ---
 def group_diagnostic_classes(label):
@@ -212,11 +212,12 @@ def train_model(resume=False):
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
     
     # 3. Model
-    print("Initializing SE-ResNet-50 (1D) with Squeeze-and-Excitation...")
+    # 3. Model
+    print("Initializing SE-ResNet-34 (1D) with Squeeze-and-Excitation...")
     num_classes = len(dataset.class_map)
     
-    # SE-ResNet-50 for 500Hz High-Res Signal
-    model = SEResNet1D(num_classes=num_classes, input_channels=NUM_LEADS)
+    # SE-ResNet-34 for 500Hz High-Res Signal
+    model = SEResNet34(num_classes=num_classes, input_channels=NUM_LEADS)
     model = model.to(device)
 
     # 4. Optimization

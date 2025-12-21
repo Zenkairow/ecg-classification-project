@@ -18,73 +18,57 @@ class SEBlock(nn.Module):
         y = self.fc(y).view(b, c, 1)
         return x * y.expand_as(x)
 
-class Bottleneck(nn.Module):
-    expansion = 4
+class SEBasicBlock(nn.Module):
+    expansion = 1
 
     def __init__(self, in_channels, out_channels, stride=1, downsample=None):
-        super(Bottleneck, self).__init__()
-        
-        # 1x1 Conv (Squeeze channels)
-        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size=1, bias=False)
+        super(SEBasicBlock, self).__init__()
+        # Kernel size 7 is standard for ECG 1D-CNNs
+        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size=7, stride=stride, padding=3, bias=False)
         self.bn1 = nn.BatchNorm1d(out_channels)
-        
-        # 3x3 Conv (Spatial/Temporal features)
-        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size=7, stride=stride, padding=3, bias=False)
-        self.bn2 = nn.BatchNorm1d(out_channels)
-        
-        # 1x1 Conv (Expand channels)
-        self.conv3 = nn.Conv1d(out_channels, out_channels * self.expansion, kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm1d(out_channels * self.expansion)
-        
         self.relu = nn.ReLU(inplace=True)
-        self.se = SEBlock(out_channels * self.expansion) # Add SE Attention
+        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size=7, stride=1, padding=3, bias=False)
+        self.bn2 = nn.BatchNorm1d(out_channels)
+        self.se = SEBlock(out_channels) # The Magic Component
         self.downsample = downsample
-        self.dropout = nn.Dropout(0.2)
+        self.dropout = nn.Dropout(0.2) 
 
     def forward(self, x):
         identity = x
+        if self.downsample is not None:
+            identity = self.downsample(x)
 
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
+        out = self.dropout(out) 
 
         out = self.conv2(out)
         out = self.bn2(out)
-        out = self.relu(out)
-        out = self.dropout(out)
-
-        out = self.conv3(out)
-        out = self.bn3(out)
         
-        # Apply Squeeze-and-Excitation
+        # Squeeze-and-Excitation
         out = self.se(out)
-
-        if self.downsample is not None:
-            identity = self.downsample(x)
 
         out += identity
         out = self.relu(out)
-
         return out
 
-class SEResNet1D(nn.Module):
-    def __init__(self, num_classes=25, input_channels=12, layers=[3, 4, 6, 3]): # ResNet-50 config
-        super(SEResNet1D, self).__init__()
+class SEResNet34(nn.Module):
+    def __init__(self, num_classes=25, input_channels=12, layers=[3, 4, 6, 3]): # ResNet-34 Config
+        super(SEResNet34, self).__init__()
         self.in_channels = 64
-        
-        # Initial Conv: Large kernel (15) for ECG morphology
         self.conv1 = nn.Conv1d(input_channels, 64, kernel_size=15, stride=2, padding=7, bias=False)
         self.bn1 = nn.BatchNorm1d(64)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
 
-        self.layer1 = self._make_layer(Bottleneck, 64, layers[0])
-        self.layer2 = self._make_layer(Bottleneck, 128, layers[1], stride=2)
-        self.layer3 = self._make_layer(Bottleneck, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(Bottleneck, 512, layers[3], stride=2)
+        self.layer1 = self._make_layer(SEBasicBlock, 64, layers[0])
+        self.layer2 = self._make_layer(SEBasicBlock, 128, layers[1], stride=2)
+        self.layer3 = self._make_layer(SEBasicBlock, 256, layers[2], stride=2)
+        self.layer4 = self._make_layer(SEBasicBlock, 512, layers[3], stride=2)
 
         self.avgpool = nn.AdaptiveAvgPool1d(1)
-        self.fc = nn.Linear(512 * Bottleneck.expansion, num_classes) # 2048 -> num_classes
+        self.fc = nn.Linear(512 * SEBasicBlock.expansion, num_classes)
 
     def _make_layer(self, block, out_channels, blocks, stride=1):
         downsample = None
