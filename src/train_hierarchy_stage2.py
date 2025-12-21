@@ -125,7 +125,17 @@ def train_router():
     model = SEResNet34(num_classes=2, input_channels=NUM_LEADS)
     model = model.to(DEVICE)
     
-    criterion = nn.CrossEntropyLoss()
+    # 3. Optimization
+    # Balance Stats from Data Prep:
+    # Class 0 (Rhythm): 2828
+    # Class 1 (Structure): 9445
+    # Imbalance Ratio: ~3.3 : 1
+    # Weighted Loss to ensure Rhythm Recall
+    weight_rhythm = 9445 / 2828
+    class_weights = torch.tensor([weight_rhythm, 1.0]).to(DEVICE)
+    print(f"Applying Class Weights: Rhythm={weight_rhythm:.2f}, Structure=1.0")
+    
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
     
