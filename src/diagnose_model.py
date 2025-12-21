@@ -11,6 +11,8 @@ import argparse
 # Add project root to path to allow 'src' imports
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
+# CRITICAL: Add the engine folder itself so 'models.resnet1d_se' works
+sys.path.append(os.path.join(project_root, 'src', 'engine_b_signal'))
 
 # Import from Training Script (Reusing Logic)
 from src.engine_b_signal.train_signal_model import ECGSignalDataset, group_diagnostic_classes, CSV_PATH, DATA_DIR, NUM_LEADS
