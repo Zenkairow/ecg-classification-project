@@ -39,46 +39,91 @@ def get_binary_label(original_label_idx, class_map):
     else:
         return 1
 
-def compute_class_weights(dataset):
+def compute_class_weights(dataset, normal_indices):
     """
-    Computes class weights to handle imbalance.
-    Goal: Prioritize Recall (Sensitivity) for Abnormal (Class 1).
-    So we don't punish False Positives as much as False Negatives.
+    Computes weights dynamically.
+    Strategy:
+    1. Count Normal vs Abnormal.
+    2. Compute Inverse Frequency (Balanced Weights).
+    3. FORCE Abnormal Weight to be at least Equal or Higher to Normal to guarantee Recall.
     """
-    print("Computing class weights...")
-    normal_count = 0
-    abnormal_count = 0
+    print("Computing class weights from dataset...")
     
-    # Quick scan of the dataset labels
-    # Note: dataset.annotations has 'diagnostic_superclass' or 'label'
+    # Efficient counting
+    # Access the label column directly
     loss_col = 'label' if 'label' in dataset.annotations.columns else 'diagnostic_superclass'
+    all_labels = dataset.annotations[loss_col].values
     
-    # We need to map string labels to binary
-    # This might be slow if we iterate all, but dataset is small (21k)
-    # Better: use pandas
-    labels = dataset.annotations[loss_col].values
+    # We need to map these to indices to check against normal_indices
+    # dataset.class_map maps string -> int
+    # But dataset.annotations has strings?
+    # Let's check a sample.
+    example = all_labels[0]
     
-    # NOTE: The dataset applies 'group_diagnostic_classes' internally, but the CSV might not have the grouped names yet?
-    # Actually ECGSignalDataset constructor does grouping.
-    # But let's rely on the dataset class_map logic.
+    # Map all to binary
+    # We can use the class_map to get the int index, then check normal_indices
+    # BUT dataset.annotations might have raw strings that need grouping first?
+    # dataset.unique_labels has the grouped labels.
+    # dataset.annotations has raw labels.
+    # We need to use `dataset.class_map` logic.
     
-    # Let's count via the loop for safety or just assume standard distribution?
-    # User said: "if Normal is 40% and Abnormal is 60%, weight Normal slightly higher"
-    # Actually, to maximize Recall of Abnormal, we usually increase weight of Abnormal.
-    # But usually CrossEntropy weights are inverse frequency.
+    num_normal = 0
+    num_abnormal = 0
     
-    # Let's count exactly.
-    for i in range(len(dataset)):
-        # Inspect the label index returned by dataset
-        # We can't easily peek without getting item.
-        # Let's use the raw dataframe and the group logic from train_signal_model import group_diagnostic_classes
-        pass 
-        
-    # Hack: Just count based on the internal class map keys since we know the mapping
-    # NORM + Sinus_Rhythm vs Others.
+    # Invert map for fast check if we had indices, but we have strings
+    # Grouping logic is: group_diagnostic_classes(raw) -> group
+    # We don't have that function imported easily without circular import if we aren't careful.
+    # Actually we imported `group_diagnostic_classes`? No, we didn't.
+    # Let's import it or re-implement simple check.
     
-    # Let's do it dynamically in the main script to be precise.
-    return torch.tensor([1.0, 1.0]) # Default placeholder
+    # Easier: Iterate the dataset indices (which returns loaded items) is slow.
+    # Fast way:
+    inverted_map = {v: k for k, v in dataset.class_map.items()}
+    
+    # Iterate all strings, group them, check against Normal
+    # Wait, dataset.__getitem__ does the grouping.
+    # Let's trust the distribution given by user: 40% Normal.
+    # If we want to be exact, we can loop. Since 21k is small, let's loop the dataframe.
+    
+    # Re-import grouping logic
+    from src.engine_b_signal.train_signal_model import group_diagnostic_classes
+    
+    for raw_label in all_labels:
+        group = group_diagnostic_classes(raw_label)
+        if group in ['NORM', 'Sinus_Rhythm']:
+            num_normal += 1
+        else:
+            num_abnormal += 1
+            
+    total = num_normal + num_abnormal
+    print(f"Distribution: Normal={num_normal} ({num_normal/total:.1%}), Abnormal={num_abnormal} ({num_abnormal/total:.1%})")
+    
+    # Compute Balanced Weights: Total / (NumClasses * ClassCount)
+    w_norm = total / (2 * num_normal)
+    w_abnorm = total / (2 * num_abnormal)
+    
+    print(f"Theoretical Balanced Weights: Normal={w_norm:.2f}, Abnormal={w_abnorm:.2f}")
+    
+    # USER CONSTRAINT: "Maximize Recall of Abnormal"
+    # This means we punish Missing Abnormal (False Negative).
+    # So w_abnorm should be High.
+    # USER CONSTRAINT: "Weight Normal Slightly Higher" (Potential Confusion)
+    # If Normal is Minority (e.g. 40%), w_norm (1.25) > w_abnorm (0.83).
+    # This maximizes Accuracy but hurts Abnormal Recall.
+    # DECISION: We prioritize Recall. We will Flip the weights or Equalize them + Bias.
+    # Let's set w_abnorm = w_norm * 1.5 (Aggressive Recall Bias)
+    
+    final_w_norm = 1.0
+    final_w_abnorm = (num_normal / num_abnormal) * 1.5 # Bias towards Abnormal
+    
+    # Normalize
+    scale = 1.0 / min(final_w_norm, final_w_abnorm)
+    final_w_norm *= scale
+    final_w_abnorm *= scale
+    
+    print(f"Final Weights for Training: Normal={final_w_norm:.2f}, Abnormal={final_w_abnorm:.2f}")
+    
+    return torch.tensor([final_w_norm, final_w_abnorm], dtype=torch.float32)
 
 def train_gatekeeper():
     print("--- Starting Stage 1: The Gatekeeper (Normal vs Abnormal) ---")
@@ -89,12 +134,12 @@ def train_gatekeeper():
     dataset = ECGSignalDataset(csv_file=CSV_PATH, root_dir=DATA_DIR, detected_seq_len=5000)
     
     # Identify indices for Normal classes
-    normal_indices = []
+    normal_indices = set()
     for name, idx in dataset.class_map.items():
         if name in ['NORM', 'Sinus_Rhythm']:
-            normal_indices.append(idx)
+            normal_indices.add(idx)
             
-    print(f"Normal Classes Indices: {normal_indices} ({['NORM', 'Sinus_Rhythm']})")
+    print(f"Normal Classes Indices: {normal_indices}")
     
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
@@ -105,29 +150,11 @@ def train_gatekeeper():
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
     
     # 2. Model
-    # Binary Output
     model = SEResNet34(num_classes=2, input_channels=NUM_LEADS)
     model = model.to(DEVICE)
     
     # 3. Weights calculation
-    # We want High Recall for Class 1 (Abnormal).
-    # To encourage the model to NOT miss class 1, we can weight Class 1 higher.
-    # Let's assume a 1:1 balance for now, or maybe 1.5 for Abnormal.
-    # Or strict inverse frequency.
-    # Let's calculate counts from full dataset iteration once (fast enough for 21k)
-    print("Calculating Class Distribution...")
-    zeros = 0
-    ones = 1
-    # Iterate a bit of training data to estimate? No, let's just use a reasonable prior.
-    # User said 40% Normal, 60% Abnormal.
-    # Inverse weights: 1/0.4 = 2.5, 1/0.6 = 1.66
-    # Normalized: Normal=1.5, Abnormal=1.0
-    # Wait, if we want HIGH RECALL for Abnormal, we punish Missing Abnormal.
-    # Missing Abnormal means Pred=0, True=1.
-    # So we want the loss for True=1 to be higher.
-    # So weight for Class 1 should be higher.
-    class_weights = torch.tensor([1.0, 2.0]).to(DEVICE) # Upweight Abnormal
-    print(f"Using Class Weights: {class_weights}")
+    class_weights = compute_class_weights(dataset, normal_indices).to(DEVICE)
     
     criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
@@ -144,15 +171,14 @@ def train_gatekeeper():
         for inputs, original_labels in pbar:
             inputs = inputs.to(DEVICE)
             
-            # Remap Labels
-            # Try to vectorize this
-            binary_labels = []
-            for l in original_labels:
-                if l.item() in normal_indices:
-                    binary_labels.append(0)
-                else:
-                    binary_labels.append(1)
-            binary_labels = torch.tensor(binary_labels).to(DEVICE)
+            # Remap Labels (Vectorized)
+            # Create a boolean mask: True if label is in normal_indices
+            # Since normal_indices is a set of small ints, we can use a lookup tensor if needed, but python list comprehension is fast enough for batch 32
+            # Optimized list comprehension
+            binary_labels = torch.tensor(
+                [0 if l.item() in normal_indices else 1 for l in original_labels], 
+                device=DEVICE
+            )
             
             optimizer.zero_grad()
             outputs = model(inputs)
@@ -172,14 +198,11 @@ def train_gatekeeper():
             for inputs, original_labels in val_loader:
                 inputs = inputs.to(DEVICE)
                 
-                # Remap
-                binary_labels_list = []
-                for l in original_labels:
-                    if l.item() in normal_indices:
-                        binary_labels_list.append(0)
-                    else:
-                        binary_labels_list.append(1)
-                binary_labels = torch.tensor(binary_labels_list).to(DEVICE)
+                # Remap (Vectorized)
+                binary_labels = torch.tensor(
+                    [0 if l.item() in normal_indices else 1 for l in original_labels], 
+                    device=DEVICE
+                )
                 
                 outputs = model(inputs)
                 _, predicted = torch.max(outputs.data, 1)
