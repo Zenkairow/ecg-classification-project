@@ -5,6 +5,7 @@ import sys
 # Setup Path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
+sys.path.append(os.path.join(project_root, 'src', 'engine_b_signal'))
 
 from src.engine_b_signal.train_signal_model import CSV_PATH, group_diagnostic_classes
 
