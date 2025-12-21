@@ -8,8 +8,9 @@ import sys
 import os
 import argparse
 
-# Add src to path to allow imports
-sys.path.append(os.path.join(os.path.dirname(__file__), 'engine_b_signal'))
+# Add project root to path to allow 'src' imports
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(project_root)
 
 # Import from Training Script (Reusing Logic)
 from src.engine_b_signal.train_signal_model import ECGSignalDataset, group_diagnostic_classes, CSV_PATH, DATA_DIR, NUM_LEADS
