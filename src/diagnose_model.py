@@ -122,7 +122,8 @@ def diagnose(model_path):
     print("\n" + "="*60)
     print(f"CLASSIFICATION REPORT (Val Acc: {np.mean(np.array(all_preds) == np.array(all_labels)):.2%})")
     print("="*60)
-    print(classification_report(all_labels, all_preds, target_names=target_names))
+    # FIX: Explicitly pass labels so sklearn doesn't complain if some classes are missing in the val set
+    print(classification_report(all_labels, all_preds, labels=range(len(target_names)), target_names=target_names))
     
     # 5. Confusion Analysis
     analyze_confusions(all_labels, all_preds, class_map)
