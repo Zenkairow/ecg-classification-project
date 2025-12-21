@@ -188,7 +188,9 @@ def train_rhythm_specialist():
             print("  -> Saved Best Model")
             
     print(f"\nTraining Complete. Best Val Acc: {best_acc:.2%}")
-    print(classification_report(val_labels, val_preds, target_names=RHYTHM_CLASSES, zero_division=0))
+    # Fix: Explicitly provide labels to avoid mismatch error if some classes are missing in val
+    all_class_ids = list(range(len(RHYTHM_CLASSES)))
+    print(classification_report(val_labels, val_preds, labels=all_class_ids, target_names=RHYTHM_CLASSES, zero_division=0))
 
 if __name__ == "__main__":
     train_rhythm_specialist()
