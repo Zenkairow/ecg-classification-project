@@ -26,7 +26,8 @@ def load_validation_data():
     """Replicates the split logic from training to get the exact same validation set."""
     print("Loading Dataset...")
     # We must replicate the exact split logic
-    dataset = ECGSignalDataset(csv_file=CSV_PATH, root_dir=DATA_DIR)
+    # FIX: Pass the sequence length (5000) so the dataset knows how to initialize buffers
+    dataset = ECGSignalDataset(csv_file=CSV_PATH, root_dir=DATA_DIR, detected_seq_len=5000)
     
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
