@@ -70,4 +70,4 @@ That's it! access the dashboard at **[http://localhost:8501](http://localhost:85
     -   *Structure Net*: Morphology diagnosis (e.g., MI, Hypertrophy).
 
 ---
-*© 2025 DeepMind Health / PBLS Team*
+*© 2025 PBLS Team*

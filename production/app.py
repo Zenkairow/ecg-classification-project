@@ -265,7 +265,7 @@ st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center; color: #7F8C8D; font-size: 0.8em;'>
-        CardioScan Pro v2.0 | Confidential Medical Device Software | © 2025 DeepMind Health
+        CardioScan Pro v2.0 | Confidential Medical Device Software | © 2025 PBLS Team
     </div>
     """, 
     unsafe_allow_html=True
