@@ -135,7 +135,14 @@ def run_demo():
     # Pick 5 random Abnormal samples to test (skipping Normals for now as requested)
     # Normals are filtered out because trained specialists don't know "Normal" class
     # and would hallucinate a disease.
-    valid_mask = ~df['label'].isin(['NORM', 'Sinus_Rhythm']) & ~df['diagnostic_superclass'].isin(['NORM', 'Sinus_Rhythm'])
+    # Safe filtering
+    label_mask = ~df['label'].isin(['NORM', 'Sinus_Rhythm'])
+    if 'diagnostic_superclass' in df.columns:
+        superclass_mask = ~df['diagnostic_superclass'].isin(['NORM', 'Sinus_Rhythm'])
+        valid_mask = label_mask & superclass_mask
+    else:
+        valid_mask = label_mask
+        
     sub_df = df[valid_mask]
     
     samples = sub_df.sample(5)
