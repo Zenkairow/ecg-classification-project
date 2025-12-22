@@ -40,13 +40,14 @@ Use our automation script to fetch the models and configure the production envir
 PowerShell -ExecutionPolicy Bypass -File .\setup_production.ps1
 ```
 
-### 3. Launch the App
-Run the Docker container script. This handles all dependencies and port forwarding.
-```powershell
-PowerShell -ExecutionPolicy Bypass -File .\run_docker_production.ps1
+### 3. Launch the App (One-Click)
+We use `docker-compose` to build and run the entire stack.
+```bash
+docker-compose up --build
 ```
 
-Access the dashboard at **[http://localhost:8501](http://localhost:8501)**.
+That's it! access the dashboard at **[http://localhost:8501](http://localhost:8501)**.
+*(To run in background, use `docker-compose up -d`)*.
 
 ---
 

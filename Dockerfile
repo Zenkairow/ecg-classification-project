@@ -1,33 +1,32 @@
-# Base Image: Use a comprehensive, NVIDIA-optimized PyTorch container
-FROM nvcr.io/nvidia/pytorch:24.01-py3
+# Base Image: Lightweight Python 3.10
+FROM python:3.10-slim
 
-# Set the working directory inside the container
-WORKDIR /workspace/project
+# Set working directory
+WORKDIR /app
 
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-
-# Install essential system packages
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    build-essential \
+# Install system dependencies (Required for OpenCV/cv2)
+RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy the Python requirements file
-COPY requirements.txt .
+# Copy Requirements first (for caching)
+COPY production/requirements.txt /app/requirements.txt
 
-# Upgrade pip and install all general Python libraries
-RUN pip install --no-cache-dir --upgrade pip
+# Install Python Dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install PyTorch Geometric using the official method for our CUDA/PyTorch version
-RUN pip install torch_geometric \
-  --extra-index-url https://data.pyg.org/whl/torch-2.2.0+cu121.html
+# Copy the entire project logic
+# We copy 'production' specifically to keep the image clean, 
+# but if the code relies on '../data' or '../models' mounts, 
+# those will be provided by volume mapping in docker-compose.
+COPY production /app/production
 
-# Copy the rest of the project's source code
-COPY . .
+# Expose Streamlit Port
+EXPOSE 8501
 
-# Set up Jupyter Lab as the default command
-CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--allow-root", "--no-browser", "--NotebookApp.token=''"]
+# Set the working directory to where app.py is relative to logic
+WORKDIR /app/production
+
+# Command to run the app
+CMD ["streamlit", "run", "app.py", "--server.address=0.0.0.0"]

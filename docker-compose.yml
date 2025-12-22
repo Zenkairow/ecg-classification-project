@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  cardioscan:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cardioscan-pro
+    ports:
+      - "8501:8501"
+    volumes:
+      # Mount the production folder so code changes reflect immediately
+      - ./production:/app/production
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
