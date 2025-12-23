@@ -1,17 +1,22 @@
-# src/config.py
+# System Configuration for ECG Hierarchical Pipeline
 
-# --- Data Configuration for V1 ---
-# This version uses the correct ABSOLUTE path for the local Docker container.
-DATA_PATH = '/workspace/project/data/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3/'
-METADATA_FILE = 'ptbxl_database.csv'
-SAMPLING_RATE = 100 # V1 used the 100Hz data
+# --- Stage 1: The Gatekeeper ---
+# Threshold calibrated to ensure > 99% Recall on Validation Set
+STAGE1_THRESHOLD = 0.14
+STAGE1_MODEL_PATH = "models/hierarchy_stage1_gatekeeper.pth"
 
-# --- Model Configuration ---
-NUM_CLASSES = 5 # NORM, MI, STTC, CD, HYP
-NUM_LEADS = 12
-SIGNAL_LENGTH = 1000 # 10 seconds at 100Hz
+# --- Stage 2: The Router ---
+STAGE2_MODEL_PATH = "models/hierarchy_stage2_router.pth"
+STAGE2_DATA_PATH = "data/stage2_router_dataset.csv"
 
-# --- Training Configuration (not used by the app, but here for completeness) ---
-LEARNING_RATE = 0.001
-BATCH_SIZE = 64
-EPOCHS = 10
+# --- Stage 3: The Specialists ---
+# Rhythm Specialist
+STAGE3_RHYTHM_DATA_PATH = "data/stage3_rhythm_dataset.csv"
+STAGE3_RHYTHM_MODEL_PATH = "models/hierarchy_stage3_rhythm.pth"
+# Structure Specialist
+STAGE3_STRUCTURE_DATA_PATH = "data/stage3_structure_dataset.csv"
+STAGE3_STRUCTURE_MODEL_PATH = "models/hierarchy_stage3_structure.pth"
+
+# --- Common ---
+SIGNAL_LENGTH = 5000
+SAMPLING_RATE = 500

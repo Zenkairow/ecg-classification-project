@@ -1,27 +1,34 @@
+
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
+*.py[cod]
+*$py.class
+
+# Data & Datasets
+data/
+*.npy
+*.csv
+*.zip
+signals*/
+raw_data/
+processed_data/
+production/data/
+debug_crop.jpg
+processed_verification*.png
+
+
+# Environment
+.env
 venv/
-pip-selfcheck.json
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Models
+models/
+*.pth
 
 # Docker
-.dockerignore
 docker-compose.yml
-
-# VS Code
-.vscode/
-
-# Jupyter Notebooks
-.ipynb_checkpoints
-
-# Data (NEVER commit large data files)
-data/
-data_synthesis/output/
-data_synthesis/background_images/
-
-# Environment variables
-.env

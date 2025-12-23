@@ -1,49 +1,13 @@
-# === Core ML & Data Science ===
-torch
-pandas
-numpy
-scikit-learn
-scipy
-
-# === ECG & Signal Processing ===
-wfdb
-pysiology
-
-# === Visualization ===
-matplotlib
-seaborn
-plotly
-
-# === Web App & API ===
-streamlit
-fastapi
-uvicorn[standard]
-
-# === MLOps & Reproducibility ===
-mlflow
-dvc[s3]
-hydra-core
-
-# === Future Scope: Advanced Architectures ===
-transformers
-# torch_geometric is now installed in the Dockerfile
-dgl
-tsai
-
-# === Future Scope: Generative AI ===
-diffusers
-accelerate
-
-# === Model Fairness & Explainability (XAI) ===
-fairlearn
-shap
-captum
-
-# === Performance & Optimization ===
-onnx
-torch-tensorrt
-torch_pruning
-
-# === Utilities ===
-jupyterlab
+numpy==1.26.4
+pillow
+torch==2.1.0
+torchvision==0.16.0
+transformers==4.31.0
+pytorch-msssim
+realesrgan
+albumentations
+opencv-python
 tqdm
+basicsr
+facexlib
+gfpgan
