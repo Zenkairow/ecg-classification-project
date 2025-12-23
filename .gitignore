@@ -17,6 +17,9 @@ debug_crop.jpg
 processed_verification*.png
 
 
+# Agent Configuration
+.agent/
+
 # Environment
 .env
 venv/
