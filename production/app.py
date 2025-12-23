@@ -48,17 +48,23 @@ col_logo, col_title = st.columns([1, 6])
 with col_logo:
     st.markdown("# 🫀") # Placeholder for logo
 with col_title:
-    st.title("CardioScan Pro")
-    st.markdown("**Advanced Hierarchical ECG Diagnosis System** | *Powered by AI*")
+    st.title("CardioScan Pro v2.1")
+    st.markdown("**Advanced Hierarchical ECG Diagnosis System** | *Powered by AI | Enterprise Edition*")
 
 st.markdown("---")
 
 # --- Sidebar Inputs ---
-st.sidebar.header("Patient Data Input")
-
-input_mode = st.sidebar.radio("Select Analysis Mode", ["📈 Signal Analysis (.npy)", "👁️ Visual Analysis (Image)"])
+st.sidebar.header("Patient Registration")
+patient_name = st.sidebar.text_input("Full Name", "Anonymous")
+c1, c2 = st.sidebar.columns(2)
+patient_age = c1.number_input("Age", 0, 120, 45)
+patient_gender = c2.selectbox("Gender", ["Male", "Female", "Other"])
+patient_notes = st.sidebar.text_area("Clinical Notes", "Routine Checkup")
 
 st.sidebar.markdown("---")
+st.sidebar.header("Data Source")
+input_mode = st.sidebar.radio("Select Analysis Mode", ["📈 Signal Analysis (.npy)", "👁️ Visual Analysis (Image)"])
+
 
 # Initialize Predictor (Cached)
 @st.cache_resource
@@ -76,60 +82,144 @@ except Exception as e:
 # --- LOGIC HANDLING ---
 
 def display_medical_report(prediction, mode="Signal"):
-    """Reusable function to display professional results"""
+    """
+    Renders a sterile, professional Clinical Report Card (EMR Style).
+    Uses Streamlit Components to isolate HTML/CSS from Markdown parsing issues.
+    """
+    import streamlit.components.v1 as components
     
     diag = prediction.get('diagnosis', 'Unknown')
     conf = prediction.get('confidence', 0.0)
     top3 = prediction.get('top3', {})
     triage = prediction.get('triage', 'Visual')
     
-    # Semantic Color Logic
+    # Clinical Color Codes
     if diag in ['NORM', 'Sinus_Rhythm']:
-        status_color = "normal" # Streamlit green
-        box_color = "green"
-        status_text = "NORMAL / LOW RISK"
+        theme_color = "#2e7d32" # Medical Green
+        bg_color = "#e8f5e9"
+        status_text = "NORMAL VARIANT"
+        severity = "LOW PRIORITY"
     elif triage == "Rhythm":
-        status_color = "off" # Streamlit gray/neutral
-        box_color = "orange"
-        status_text = "ARRHYTHMIA DETECTED"
+        theme_color = "#ef6c00" # Clinical Amber
+        bg_color = "#fff3e0"
+        status_text = "RHYTHM DISTURBANCE"
+        severity = "MODERATE PRIORITY"
     else:
-        status_color = "inverse" # Streamlit red
-        box_color = "red"
-        status_text = "STRUCTURAL / MORPHOLOGICAL ABNORMALITY"
+        theme_color = "#c62828" # Clinical Red
+        bg_color = "#ffebee"
+        status_text = "MORPHOLOGICAL ANOMALY"
+        severity = "URGENT ATTENTION"
 
-    # 1. Top Level Status
-    st.markdown(f"### Diagnostic Report: {mode}")
-    
-    # Metrics Row
-    m1, m2, m3 = st.columns(3)
-    
-    with m1:
-        st.metric(label="Primary Diagnosis", value=diag, delta=None)
-    with m2:
-        st.metric(label="Confidence Score", value=f"{conf:.1%}", delta=status_text, delta_color=status_color)
-    with m3:
-        st.metric(label="Triage Category", value=triage)
+    # Differential Diagnosis Rows
+    rows_html = ""
+    for condition, prob in top3.items():
+        pct = prob * 100
+        row_color = "#2196f3" if prob == max(top3.values()) else "#b0bec5"
+        rows_html += f"""
+        <tr>
+            <td style="padding: 8px; border-bottom: 1px solid #eeeeee; color: #37474f; font-weight: 500;">{condition}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eeeeee; text-align: right; color: #546e7a;">{pct:.1f}%</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eeeeee;">
+                <div style="background-color: #eceff1; height: 6px; border-radius: 3px; width: 100%;">
+                    <div style="background-color: {row_color}; height: 6px; border-radius: 3px; width: {pct}%;"></div>
+                </div>
+            </td>
+        </tr>"""
 
-    # 2. Detailed Visualization
-    c1, c2 = st.columns([3, 2])
+    # Assemble Report - Full HTML Page for Iframe
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+        <style>
+            body {{
+                font-family: 'Roboto', sans-serif;
+                margin: 0;
+                padding: 10px;
+                background-color: transparent;
+            }}
+            .card {{
+                background-color: white;
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+                padding: 20px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }}
+            .header {{
+                border-bottom: 2px solid {theme_color};
+                padding-bottom: 10px;
+                margin-bottom: 15px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }}
+            .grid {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 20px;
+                margin-bottom: 20px;
+            }}
+            .metric-box {{
+                padding: 15px;
+                border-radius: 4px;
+            }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 0.9em;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="header">
+                <div>
+                    <span style="font-size: 0.85em; color: #757575; text-transform: uppercase; letter-spacing: 1px;">Clinical Diagnosis</span>
+                    <h2 style="margin: 0; color: #2c3e50; font-size: 1.8em;">{diag}</h2>
+                </div>
+                <div style="text-align: right;">
+                    <div style="background-color: {theme_color}; color: white; padding: 4px 12px; border-radius: 2px; font-size: 0.8em; font-weight: bold;">{severity}</div>
+                    <div style="color: {theme_color}; font-size: 0.8em; margin-top: 4px;">{status_text}</div>
+                </div>
+            </div>
+
+            <div class="grid">
+                <div class="metric-box" style="background-color: #f8f9fa; border-left: 4px solid #b0bec5;">
+                    <div style="font-size: 0.8em; color: #546e7a;">AI CONFIDENCE</div>
+                    <div style="font-size: 1.4em; font-weight: 500; color: #263238;">{conf:.1%}</div>
+                    <div style="font-size: 0.7em; color: #78909c;">Probability index</div>
+                </div>
+                <div class="metric-box" style="background-color: {bg_color}; border-left: 4px solid {theme_color};">
+                    <div style="font-size: 0.8em; color: {theme_color}; opacity: 0.8;">CLASSIFICATION</div>
+                    <div style="font-size: 1.4em; font-weight: 500; color: {theme_color};">{mode} / {triage}</div>
+                    <div style="font-size: 0.7em; color: {theme_color}; opacity: 0.8;">Taxonomy Stage III</div>
+                </div>
+            </div>
+
+            <h4 style="margin: 0 0 10px 0; color: #455a64; font-size: 0.9em; text-transform: uppercase;">Differential Probabilities</h4>
+            <table>
+                <thead>
+                    <tr style="background-color: #f5f5f5; color: #616161; text-align: left;">
+                        <th style="padding: 8px; border-bottom: 2px solid #eeeeee;">Condition</th>
+                        <th style="padding: 8px; border-bottom: 2px solid #eeeeee; text-align: right;">Likelihood</th>
+                        <th style="padding: 8px; border-bottom: 2px solid #eeeeee;">Indicator</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows_html}
+                </tbody>
+            </table>
+            <div style="font-size: 0.75em; color: #9e9e9e; margin-top: 15px; font-style: italic;">
+                * Computer Aided Diagnosis (CADx) Estimate. Not a definitive medical confirmation. correlate with clinical history.
+            </div>
+        </div>
+    </body>
+    </html>
+    """
     
-    with c1:
-        st.subheader("Probability Distribution")
-        # Custom Chart
-        chart_data = pd.DataFrame(
-            {"Condition": list(top3.keys()), "Probability": list(top3.values())}
-        ).sort_values("Probability", ascending=True)
-        
-        st.bar_chart(chart_data, x="Condition", y="Probability", use_container_width=True, color="#3498DB")
-        
-    with c2:
-        st.subheader("Clinical interpretation")
-        if box_color == "green":
-             st.success(f"**{diag}**: This ECG pattern suggests normal cardiac function. {status_text}.")
-        elif box_color == "orange":
-             st.warning(f"**{diag}**: This indicates a disturbance in the heart's electrical rhythm. Immediate review recommended.")
-        else:
-             st.error(f"**{diag}**: This suggests a structural issue or injury pattern (e.g., Infarction/Hypertrophy). CRITICAL attention required.")
+    # Use components.html instead of markdown to sand-box the HTML and avoid markdown parser errors
+    components.html(html_content, height=600, scrolling=True)
 
 
 # --- MODE 1: SIGNAL ANALYSIS ---
@@ -188,32 +278,89 @@ if input_mode == "📈 Signal Analysis (.npy)":
         if 'signal_data' in st.session_state:
             signal_data = st.session_state['signal_data']
             ground_truth = st.session_state.get('ground_truth', 'Unknown')
+            
+            # --- PERSISTENCE FOR PERFORMANCE ---
+            # Generate a "Data ID" to detect changes in signal or patient info
+            data_id = hash((signal_data.tobytes(), patient_name, patient_age, patient_gender))
+            if st.session_state.get('last_signal_id') != data_id:
+                # Clear stale results if data or metadata changed
+                st.session_state['last_signal_id'] = data_id
+                st.session_state['engine_b_report'] = None
+                st.session_state['engine_b_prediction'] = None
 
     # DISPLAY SIGNAL
     if signal_data is not None:
-        st.subheader("Patient Vitals (ECG Lead I)")
-        
-        # Determine shape [12, 5000] vs [5000, 12]
-        if signal_data.shape[0] == 12:
-            data_t = signal_data.T
-        else:
-            data_t = signal_data
-            
-        df_chart = pd.DataFrame(data_t, columns=[f"L{i+1}" for i in range(12)])
-        st.line_chart(df_chart["L1"], height=250, color="#E74C3C")
-        
-        with st.expander("View Full 12-Lead Panel"):
-            st.line_chart(df_chart, height=450)
-            
         st.divider()
+        st.subheader("High-Fidelity 12-Lead Report")
+
+        from utils.plotting import plot_12_lead_ecg, plot_interactive_3d
         
-        # PREDICT
-        with st.spinner("Processing Signal through Neural Hierarchy..."):
-            # delay for effect?
-            # time.sleep(0.5) 
-            result = predictor.predict(signal_data)
+        # 1. 3D Visualizer (Top)
+        with st.expander("✨ 3D Holographic View (Interactive)", expanded=True):
+            # Layout: Controls | Graph
+            c_graph, c_ctrl = st.columns([4, 1])
             
-        display_medical_report(result, mode="Signal")
+            with c_ctrl:
+                st.markdown("###### 🛠 Controls")
+                theme = st.selectbox("Color Theme", ["Clinical Groups", "Monochrome Cyan", "Retro Neon"], index=0, help="Group leads by anatomy or use unified colors.")
+                line_width = st.slider("Thickness", 1.0, 5.0, 2.5, 0.5, help="Adjust signal trace width.")
+                opacity = st.slider("Opacity", 0.1, 1.0, 0.9, 0.1)
+                st.caption("💡 Click Legend items to toggle leads.")
+            
+            with c_graph:
+                fig_3d = plot_interactive_3d(signal_data, theme=theme, line_width=line_width, opacity=opacity)
+                st.plotly_chart(fig_3d, use_container_width=True)
+            
+        # 2. Static Report
+        
+        # Prepare Metadata
+        pf_name = "Uploaded_File"
+        if source_type == "Upload File" and uploaded_file:
+            pf_name = uploaded_file.name
+        elif source_type == "Load Random Patient":
+            pf_name = "Database_Sample_ID"
+            
+        patient_meta = {
+            "name": patient_name,
+            "age": patient_age,
+            "gender": patient_gender,
+            "notes": patient_notes
+        }
+
+        # --- CACHED REPORT GENERATION ---
+        if st.session_state.get('engine_b_report') is None:
+            with st.spinner("Generating Medical-Grade Trace..."):
+                report_path = plot_12_lead_ecg(
+                    signal_data, 
+                    patient_meta=patient_meta,
+                    original_filename=pf_name,
+                    save_dir="data/engine_b" 
+                )
+                st.session_state['engine_b_report'] = report_path
+        
+        report_path = st.session_state['engine_b_report']
+        
+        # Display
+        st.image(report_path, caption=f"Report Generated for {patient_name}", use_container_width=True)
+        
+        # Download Button
+        with open(report_path, "rb") as file:
+            st.download_button(
+                label="📥 Download Clinical Report (PNG)",
+                data=file,
+                file_name=os.path.basename(report_path),
+                mime="image/png"
+            )
+        
+        st.success(f"✅ Report saved to: {report_path}")
+        
+        # --- CACHED PREDICTION ---
+        if st.session_state.get('engine_b_prediction') is None:
+            with st.spinner("Processing Signal through Neural Hierarchy..."):
+                result = predictor.predict(signal_data)
+                st.session_state['engine_b_prediction'] = result
+            
+        display_medical_report(st.session_state['engine_b_prediction'], mode="Signal")
         
         if ground_truth:
             st.caption(f"Medical Record Label: {ground_truth}")
@@ -233,7 +380,7 @@ elif input_mode == "👁️ Visual Analysis (Image)":
         
         c1, c2 = st.columns([1, 1])
         with c1:
-            st.image(image, caption="Scanned Document", use_column_width=True)
+            st.image(image, caption="Scanned Document", use_container_width=True)
             
         with c2:
             st.write("### AI Vision Engine")
@@ -246,9 +393,31 @@ elif input_mode == "👁️ Visual Analysis (Image)":
             
             try:
                 vis_predictor = get_visual_predictor()
-                if st.button("Analyze Scan"):
-                    with st.spinner("Extracting features & Classifying..."):
-                        vis_result = vis_predictor.predict(image)
+                
+                # Check if we should clear vision cache
+                vis_id = hash((img_file.name, patient_name, patient_age, patient_gender))
+                if vis_id != st.session_state.get('last_vis_id'):
+                    st.session_state['last_vis_id'] = vis_id
+                    st.session_state['engine_a_result'] = None
+
+                if st.button("Analyze Scan") or st.session_state.get('engine_a_result') is not None:
+                    if st.session_state.get('engine_a_result') is None:
+                        with st.spinner("Extracting features & Classifying..."):
+                            # Gather Patient Info from Sidebar
+                            patient_meta = {
+                                "name": patient_name,
+                                "age": patient_age,
+                                "gender": patient_gender,
+                                "notes": patient_notes
+                            }
+                            
+                            vis_result = vis_predictor.predict(image, patient_metadata=patient_meta)
+                            st.session_state['engine_a_result'] = vis_result
+                        
+                    vis_result = st.session_state['engine_a_result']
+                        
+                    if "saved_files" in vis_result and vis_result["saved_files"]:
+                         st.success(f"📁 Image Data Saved: {os.path.basename(vis_result['saved_files']['pre'])}")
                         
                     if "error" in vis_result:
                         st.error(f"Analysis Failed: {vis_result['error']}")
@@ -265,7 +434,7 @@ st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center; color: #7F8C8D; font-size: 0.8em;'>
-        CardioScan Pro v2.0 | Confidential Medical Device Software | © 2025 PBLS Team
+        CardioScan Pro v2.1 | Confidential Medical Device Software | © 2025 PBLS Team
     </div>
     """, 
     unsafe_allow_html=True

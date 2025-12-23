@@ -100,3 +100,37 @@ Needed:
 - Reason → Debate → Propose → WAIT for approval.
 
 This document is the single source of truth for the entire project.
+
+---
+
+## Stage: Smart Preprocessing & UI Refinement (v2.1) — December 23, 2025
+
+**What We Did:**  
+Implemented a "Smart Preprocessing Pipeline" for Engine A (Visual Analysis) and refined the 3D ECG Visualizer. 
+1. **Preprocessing**: Created `SmartImagePreprocessor` in `production/utils/preprocessing.py` handling Adaptive Cropping (Contour-based), CLAHE (Contrast Enhancement), and Resizing-with-Padding (Aspect ratio safe).
+2. **Backend**: Integrated the pipeline into `visual_backend.py`.
+3. **UI**: Enhanced the 3D Holographic Visualizer with Clinical Group coloring, Legend toggling, and user-facing controls (Thickness, Theme, Opacity).
+
+**Why We Did It:**  
+To handle real-world "dirty" inputs (mobile photos/scans) and improve clinical utility. The 3D view was previously "unprofessional," and fixed monochrome/single-color options were insufficient for rapid anatomical assessment.
+
+**Notes / Outcome:**  
+Verified with real patient reports. The preprocessor successfully isolates diagnostic grids from noise. The 3D view now follows medical standards (Cyan/Green/Amber groupings).
+
+---
+
+## Stage: UI State Optimization & Performance Fix — December 23, 2025
+
+**What We Did:**  
+Implemented `st.session_state` caching for both Engine A and Engine B. 
+1. **Change Detection**: Introduced hashing for signals and patient metadata (Name, Age, Gender).
+2. **Persistence**: Prediction results and generated ECG reports are now stored in session state.
+3. **Bug Fix**: Resolved issue where 3D Visualizer interaction triggered redundant file-saving and AI inference runs.
+
+**Why We Did It:**  
+To improve UX and system efficiency. Expensive operations (Plotting, AI Inference, Disk I/O) should only occur when inputs change, not during secondary UI interactions like opacity or thickness adjustments.
+
+**Notes / Outcome:**  
+Interface is now significantly more responsive. 3D visualizer interaction is smooth and no longer causes "flash-refresh" of the main report image.
+
+---

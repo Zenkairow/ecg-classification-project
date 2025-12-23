@@ -9,6 +9,8 @@ import sys
 # Constants
 IMAGE_SIZE = 512
 
+from utils.preprocessing import SmartImagePreprocessor
+
 class VisualPredictor:
     def __init__(self, models_dir="models", data_dir="data"):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -20,6 +22,7 @@ class VisualPredictor:
         
         self.class_map = self._build_class_map()
         self.model = self._load_model()
+        self.preprocessor = SmartImagePreprocessor()
         
     def _group_diagnostic_classes(self, label):
         """Standardizes raw labels into clinical categories."""
@@ -43,18 +46,13 @@ class VisualPredictor:
         return label
 
     def _build_class_map(self):
-        if not os.path.exists(self.csv_path):
-            raise FileNotFoundError(f"CSV not found at {self.csv_path}")
-            
-        df = pd.read_csv(self.csv_path)
-        col = 'label' if 'label' in df.columns else 'diagnostic_superclass'
-        
-        raw_labels = df[col].unique().tolist()
-        grouped_labels = set()
-        for l in raw_labels:
-            grouped_labels.add(self._group_diagnostic_classes(l))
-            
-        unique_labels = sorted(list(grouped_labels))
+        # Hardcoded to match training configuration
+        # This removes dependency on external CSV file during inference
+        unique_labels = sorted([
+            'AV_Block', 'Atrial_Fibrillation', 'Fascicular_Block', 'IVCD', 'Ischemia', 
+            'LBBB', 'Left_Hypertrophy', 'MI_Anterior', 'MI_Inferior', 'MI_Lateral', 
+            'NORM', 'Paced', 'RBBB', 'Right_Hypertrophy', 'SVT', 'Sinus_Rhythm'
+        ])
         return {i: label for i, label in enumerate(unique_labels)}
 
     def _load_model(self):
@@ -75,23 +73,67 @@ class VisualPredictor:
         model.to(self.device).eval()
         return model
 
-    def predict(self, image_input):
+    def predict(self, image_input, patient_metadata=None):
         """
         image_input: PIL Image or path
+        patient_metadata: dict with keys 'name', 'age', 'gender' (Optional)
         """
+        # Pipeline: Smart Preprocess -> Tensor Norm
         transform = transforms.Compose([
-            transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-            transforms.ToTensor(),
+            transforms.ToTensor(), # Standardizes to [0,1], CHW
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
         
         try:
-            if isinstance(image_input, str):
-                image = Image.open(image_input).convert('RGB')
-            else:
-                image = image_input.convert('RGB')
+            # --- DATA MANAGEMENT ---
+            # 0. Generate Filename if metadata provided
+            save_paths = {}
+            if patient_metadata:
+                import time
+                timestamp = int(time.time())
+                sanitized_name = str(patient_metadata.get('name', 'Anonymous')).replace(" ", "_")
+                age = str(patient_metadata.get('age', 'NA'))
+                gender = str(patient_metadata.get('gender', 'NA'))
                 
-            tensor = transform(image).unsqueeze(0).to(self.device)
+                # Format: Name_Age_Gender_Timestamp.png
+                base_filename = f"{sanitized_name}_{age}_{gender}_{timestamp}"
+                
+                # Define Paths
+                base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # production/
+                raw_dir = os.path.join(base_path, "data", "engine_a", "patient_raw")
+                pre_dir = os.path.join(base_path, "data", "engine_a", "raw_preprocessed")
+                
+                # Ensure directories exist (redundancy check)
+                os.makedirs(raw_dir, exist_ok=True)
+                os.makedirs(pre_dir, exist_ok=True)
+                
+                save_paths['raw'] = os.path.join(raw_dir, f"{base_filename}_raw.png")
+                save_paths['pre'] = os.path.join(pre_dir, f"{base_filename}_processed.png")
+
+                # Save RAW Upload
+                if isinstance(image_input, str):
+                    # It's a path, just copy or open-save
+                    try:
+                        Image.open(image_input).save(save_paths['raw'])
+                    except: 
+                        pass # Best effort
+                elif isinstance(image_input, Image.Image):
+                    image_input.save(save_paths['raw'])
+            
+            # 1. Smart Preprocessing (Crop -> Enhance -> Resize/Pad)
+            # We match the IMAGE_SIZE constant (512) for the model
+            processed_numpy = self.preprocessor.process(image_input, target_size=IMAGE_SIZE)
+            
+            # Save PROCESSED Image
+            if 'pre' in save_paths:
+                # processed_numpy is RGB, convert to BGR for cv2 or just use PIL
+                Image.fromarray(processed_numpy).save(save_paths['pre'])
+
+            # 2. Convert to PIL for Transforms (or use directly if tensor supports it)
+            # processed_numpy is RGB uint8
+            pil_image = Image.fromarray(processed_numpy)
+             
+            tensor = transform(pil_image).unsqueeze(0).to(self.device)
             
             with torch.no_grad():
                 outputs = self.model(tensor)
@@ -107,7 +149,8 @@ class VisualPredictor:
             return {
                 "diagnosis": label,
                 "confidence": conf.item(),
-                "top3": top3
+                "top3": top3,
+                "saved_files": save_paths
             }
             
         except Exception as e:

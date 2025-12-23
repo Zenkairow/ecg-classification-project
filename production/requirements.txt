@@ -5,3 +5,7 @@ pandas
 scikit-learn
 streamlit
 tqdm
+matplotlib
+opencv-python-headless
+altair
+plotly

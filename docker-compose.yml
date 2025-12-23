@@ -1,4 +1,4 @@
-version: '3.8'
+
 
 services:
   cardioscan:
@@ -11,6 +11,7 @@ services:
     volumes:
       # Mount the production folder so code changes reflect immediately
       - ./production:/app/production
+      - ./generated_ecgs:/app/generated_ecgs
     deploy:
       resources:
         reservations:
