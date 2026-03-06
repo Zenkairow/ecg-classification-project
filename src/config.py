@@ -17,6 +17,17 @@ STAGE3_RHYTHM_MODEL_PATH = "models/hierarchy_stage3_rhythm.pth"
 STAGE3_STRUCTURE_DATA_PATH = "data/stage3_structure_dataset.csv"
 STAGE3_STRUCTURE_MODEL_PATH = "models/hierarchy_stage3_structure.pth"
 
+# --- V3: AdvancedCardiacNet ---
+V3_STRUCTURE_MODEL_PATH = "models/v3_specialist_structure.pth"
+
+# --- Visual Hierarchy (Engine A) ---
+VISUAL_ROUTER_DATA_PATH = "data/visual_router_dataset.csv"
+VISUAL_RHYTHM_DATA_PATH = "data/visual_rhythm_dataset.csv"
+VISUAL_STRUCTURE_DATA_PATH = "data/visual_structure_dataset.csv"
+VISUAL_ROUTER_MODEL_PATH = "models/visual_router.pth"
+VISUAL_RHYTHM_MODEL_PATH = "models/visual_specialist_rhythm.pth"
+VISUAL_STRUCTURE_MODEL_PATH = "models/visual_specialist_structure.pth"
+
 # --- Common ---
 SIGNAL_LENGTH = 5000
 SAMPLING_RATE = 500
