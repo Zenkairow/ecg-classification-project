@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import sys
-from models.resnet1d_se import SEResNet34
+from .models.resnet1d_se import SEResNet34
 
 # --- Configuration ---
 BATCH_SIZE = 32  # Standard BS

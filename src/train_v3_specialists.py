@@ -22,8 +22,8 @@ from collections import Counter
 
 # Setup Path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(project_root)
-sys.path.append(os.path.join(project_root, 'src', 'engine_b_signal'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 # Imports
 from src.config import STAGE3_STRUCTURE_DATA_PATH, V3_STRUCTURE_MODEL_PATH, SIGNAL_LENGTH

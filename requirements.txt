@@ -6,7 +6,8 @@ transformers==4.31.0
 pytorch-msssim
 realesrgan
 albumentations
-opencv-python
+opencv-python==4.8.0.76
+gdown
 tqdm
 basicsr
 facexlib
