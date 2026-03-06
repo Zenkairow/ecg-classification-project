@@ -1,7 +1,7 @@
 # PowerShell Script to Launch Production App in Docker
 # Image: ecg-project
 
-$ImageName = "ecg-project"
+$ImageName = "ecg_classification-cardioscan"
 $CurrentDir = Get-Location
 
 Write-Host "--- Launching CardioScan AI in Docker Container ---"
