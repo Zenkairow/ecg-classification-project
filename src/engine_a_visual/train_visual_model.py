@@ -10,14 +10,12 @@ from tqdm import tqdm
 import sys
 
 # --- Configuration ---
-# --- Configuration ---
-# --- Configuration ---
 BATCH_SIZE = 2 # Reduced for 1024px
 IMAGE_SIZE = 1024 # High Resolution
 LEARNING_RATE = 1e-4
 NUM_EPOCHS = 20
 NUM_CLASSES = 5 # Placeholder, dynamic detection used
-DATA_DIR = 'data_synthesis/output/output/images/'
+DATA_DIR = 'data/images/'
 CSV_PATH = 'data/train_labels.csv'
 MODEL_SAVE_PATH = 'models/classifier_efficientnet_b4.pth'
 
