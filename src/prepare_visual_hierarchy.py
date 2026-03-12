@@ -131,10 +131,9 @@ def prepare_visual_hierarchy():
         if not fname.endswith('.png'):
             fname = fname + '.png'
         
-        # Check image exists
-        img_path = os.path.join(DATA_DIR, fname)
-        if not os.path.exists(img_path):
-            continue
+        # We don't check os.path.exists here anymore to allow generating the CSV 
+        # even if images are being downloaded or extracted later natively.
+        # img_path = os.path.join(DATA_DIR, fname)
         
         # Route
         if grouped in CLASS_0_RHYTHM:
