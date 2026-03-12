@@ -67,7 +67,16 @@ def prepare_visual_hierarchy():
     df = pd.read_csv(CSV_PATH)
     print(f"Original Visual Dataset Size: {len(df)}")
     
-    label_col = 'label' if 'label' in df.columns else 'diagnostic_superclass'
+    # Identify Label Column
+    if 'label' in df.columns:
+        label_col = 'label'
+    elif 'diagnostic_superclass' in df.columns:
+        label_col = 'diagnostic_superclass'
+    elif 'scp_codes' in df.columns:
+        label_col = 'scp_codes'
+    else:
+        print("Error: Could not find label/scp_codes column in CSV")
+        return
     
     router_rows = []
     rhythm_rows = []
@@ -75,8 +84,25 @@ def prepare_visual_hierarchy():
     
     stats = {'Rhythm': 0, 'Structure': 0, 'Ignored': 0, 'Unknown': 0}
     
+    import ast
+    
     for idx, row in df.iterrows():
-        raw_label = str(row[label_col])
+        raw_val = str(row[label_col])
+        
+        # Handle PTB-XL scp_codes dictionary format
+        if label_col == 'scp_codes':
+            try:
+                # Convert string representation of dict to actual dict
+                codes = ast.literal_eval(raw_val)
+                if codes:
+                    raw_label = max(codes.keys(), key=lambda k: codes[k])
+                else:
+                    raw_label = "UNKNOWN"
+            except:
+                raw_label = "UNKNOWN"
+        else:
+            raw_label = raw_val
+            
         grouped = group_visual_label(raw_label)
         
         if grouped in IGNORE_CLASSES:

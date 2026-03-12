@@ -78,14 +78,37 @@ class ECGSignalDataset(Dataset):
             sys.exit(1)
             
         # Class Mapping (Grouped)
-        loss_col = 'label' if 'label' in self.annotations.columns else 'diagnostic_superclass'
+        if 'label' in self.annotations.columns:
+            loss_col = 'label'
+        elif 'diagnostic_superclass' in self.annotations.columns:
+            loss_col = 'diagnostic_superclass'
+        elif 'scp_codes' in self.annotations.columns:
+            loss_col = 'scp_codes'
+        else:
+            print("Error: Could not find label/scp_codes column in CSV")
+            sys.exit(1)
         
         # Gather all grouped labels
         unique_groups = set()
-        for raw in self.annotations[loss_col].unique():
+        import ast
+        for raw_val in self.annotations[loss_col]:
+            raw_val = str(raw_val)
+            if loss_col == 'scp_codes':
+                try:
+                    codes = ast.literal_eval(raw_val)
+                    if codes:
+                        raw = max(codes.keys(), key=lambda k: codes[k])
+                    else:
+                        raw = "UNKNOWN"
+                except:
+                    raw = "UNKNOWN"
+            else:
+                raw = raw_val
+                
             unique_groups.add(group_diagnostic_classes(raw))
             
         self.unique_labels = sorted(list(unique_groups))
+        if "UNKNOWN" in self.unique_labels: self.unique_labels.remove("UNKNOWN")
         self.class_map = {label: i for i, label in enumerate(self.unique_labels)}
         
         print(f"Signal Dataset Loaded. Total samples: {len(self.annotations)}")
@@ -107,10 +130,31 @@ class ECGSignalDataset(Dataset):
         signal_path = os.path.join(self.root_dir, base_name)
         
         # 2. Get Label (Grouped)
-        loss_col = 'label' if 'label' in self.annotations.columns else 'diagnostic_superclass'
-        raw_label = str(row[loss_col])
+        if 'label' in self.annotations.columns:
+            loss_col = 'label'
+        elif 'diagnostic_superclass' in self.annotations.columns:
+            loss_col = 'diagnostic_superclass'
+        elif 'scp_codes' in self.annotations.columns:
+            loss_col = 'scp_codes'
+        else:
+            loss_col = None
+            
+        raw_val = str(row[loss_col])
+        if loss_col == 'scp_codes':
+            import ast
+            try:
+                codes = ast.literal_eval(raw_val)
+                if codes:
+                    raw_label = max(codes.keys(), key=lambda k: codes[k])
+                else:
+                    raw_label = "UNKNOWN"
+            except:
+                raw_label = "UNKNOWN"
+        else:
+            raw_label = raw_val
+
         grouped = group_diagnostic_classes(raw_label)
-        label_id = self.class_map[grouped]
+        label_id = self.class_map.get(grouped, 0) # Fallback to 0 if unknown
         
         # 3. Load Signal
         signal_tensor = torch.zeros((NUM_LEADS, self.seq_len)).float() # Default

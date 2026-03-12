@@ -35,19 +35,41 @@ def prepare_stage2_data():
     df = pd.read_csv(CSV_PATH)
     print(f"Original Dataset Size: {len(df)}")
     
-    # Identify Label Column
-    label_col = 'label' if 'label' in df.columns else 'diagnostic_superclass'
+    # Identify Label Column (Handle official PTB-XL scp_codes)
+    if 'label' in df.columns:
+        label_col = 'label'
+    elif 'diagnostic_superclass' in df.columns:
+        label_col = 'diagnostic_superclass'
+    elif 'scp_codes' in df.columns:
+        label_col = 'scp_codes'
+    else:
+        print("Error: Could not find label/scp_codes column in CSV")
+        return
     
     filtered_rows = []
     
     stats = {'Rhythm': 0, 'Structure': 0, 'Ignored': 0, 'Unknown': 0}
     
+    import ast
+    
     for idx, row in df.iterrows():
-        raw_label = row[label_col]
-        # Use existing grouping logic to standardize names first?
-        # Or check raw names? The user list matches the 'grouped' names mostly.
-        # Let's use group_diagnostic_classes to be safe, assuming user list uses grouped names.
+        raw_val = str(row[label_col])
         
+        # Handle PTB-XL scp_codes dictionary format: "{'NORM': 100.0, 'LVOLT': 0.0, 'SR': 0.0}"
+        if label_col == 'scp_codes':
+            try:
+                # Convert string representation of dict to actual dict
+                codes = ast.literal_eval(raw_val)
+                # Sort by likelihood (value) and take the highest one, fallback to first key
+                if codes:
+                    raw_label = max(codes.keys(), key=lambda k: codes[k])
+                else:
+                    raw_label = "UNKNOWN"
+            except:
+                raw_label = "UNKNOWN"
+        else:
+            raw_label = raw_val
+            
         group = group_diagnostic_classes(raw_label)
         
         if group in IGNORE_CLASSES:
