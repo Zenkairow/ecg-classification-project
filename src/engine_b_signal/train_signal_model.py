@@ -121,7 +121,22 @@ class ECGSignalDataset(Dataset):
     def __getitem__(self, index):
         # 1. Get Filename 
         row = self.annotations.iloc[index]
-        base_name = str(row['filename'])
+        f_name = row.get('filename')
+        f_hr = row.get('filename_hr')
+        f_lr = row.get('filename_lr')
+        
+        base_name = None
+        if isinstance(f_hr, str) and len(f_hr) > 0 and str(f_hr).lower() != 'nan':
+            base_name = f_hr
+        elif isinstance(f_lr, str) and len(f_lr) > 0 and str(f_lr).lower() != 'nan':
+            base_name = f_lr
+        elif isinstance(f_name, str) and len(f_name) > 0 and str(f_name).lower() != 'nan':
+            base_name = str(f_name)
+            
+        if base_name is None:
+            base_name = ""
+            
+        base_name = os.path.basename(base_name)
         if base_name.endswith('.png'):
             base_name = base_name.replace('.png', '.npy')
         elif not base_name.endswith('.npy'):
@@ -209,7 +224,26 @@ def detect_sequence_length(root_dir, csv_path):
     df = pd.read_csv(csv_path)
     
     for i in range(min(50, len(df))): # Try first 50 entries
-        fname = str(df.iloc[i]['filename']).replace('.png', '.npy')
+        row = df.iloc[i]
+        f_name = row.get('filename')
+        f_hr = row.get('filename_hr')
+        f_lr = row.get('filename_lr')
+        
+        fname = None
+        if isinstance(f_hr, str) and len(f_hr) > 0 and str(f_hr).lower() != 'nan':
+            fname = f_hr
+        elif isinstance(f_lr, str) and len(f_lr) > 0 and str(f_lr).lower() != 'nan':
+            fname = f_lr
+        elif isinstance(f_name, str) and len(f_name) > 0 and str(f_name).lower() != 'nan':
+            fname = str(f_name)
+            
+        if fname is None:
+            continue
+            
+        fname = os.path.basename(fname).replace('.png', '.npy')
+        if not fname.endswith('.npy'):
+            fname = fname + '.npy'
+            
         fpath = os.path.join(root_dir, fname)
         if os.path.exists(fpath):
             try:
