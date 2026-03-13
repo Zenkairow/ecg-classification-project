@@ -217,8 +217,8 @@ def train_visual(mode='router', epochs=20):
         replacement=True
     )
     
-    train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, sampler=sampler, num_workers=4)
-    val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
+    train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, sampler=sampler, num_workers=0)
+    val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
     
     # Model: ResNet-50 (pretrained)
     print(f"Initializing ResNet-50 with {num_classes} output classes...")
