@@ -76,35 +76,14 @@ def prepare_stage2_data():
             stats['Ignored'] += 1
             continue
             
-        # 1.5. Check Filename Validity
-        # Try multiple possible column names
-        f_name = row.get('filename')
-        f_hr = row.get('filename_hr')
-        f_lr = row.get('filename_lr')
-        
-        # Determine the best available filename
-        final_filename = None
-        
-        if isinstance(f_hr, str) and len(f_hr) > 0 and str(f_hr).lower() != 'nan':
-            final_filename = f_hr
-        elif isinstance(f_lr, str) and len(f_lr) > 0 and str(f_lr).lower() != 'nan':
-            final_filename = f_lr
-        elif isinstance(f_name, str) and len(f_name) > 0 and str(f_name).lower() != 'nan':
-             final_filename = f_name
-        # Fallback for non-string types that might be valid (e.g. integers as filenames)
-        elif f_name is not None and str(f_name).lower() != 'nan':
-             final_filename = str(f_name)
-             
-        if final_filename is None:
+        # Construct filename from ecg_id (signals are named sample_{ecg_id}.npy)
+        ecg_id = row.get('ecg_id')
+        if ecg_id is None or (isinstance(ecg_id, float) and pd.isna(ecg_id)):
             stats['MissingFile'] = stats.get('MissingFile', 0) + 1
             continue
             
-        # Robust extension handling (Match train_signal_model.py logic)
-        if final_filename.endswith('.png'):
-            final_filename = final_filename.replace('.png', '.npy')
+        final_filename = f"sample_{int(ecg_id)}.npy"
         
-        # 2. Map to 0/1
-            
         # 2. Map to 0/1
         router_label = -1
         
@@ -117,21 +96,18 @@ def prepare_stage2_data():
             stats['Structure'] += 1
         else:
             # Fallback/Unknown
-            # print(f"Warning: Unknown/Unmapped Class: {group} (Raw: {raw_label})")
             stats['Unknown'] += 1
             continue
             
         # Add to new list
-        # Keep necessary columns: filename/path and the new label
-        # Explicitly copy relevant columns to avoid ambiguity
         new_row = {
             'router_label': router_label,
-            'filename_hr': final_filename, # Normalized filename
-            'filename_lr': '', # Deprecated/Unused in this new schema
+            'filename': final_filename,
+            'ecg_id': int(ecg_id),
             'age': row.get('age', 0),
             'sex': row.get('sex', 0),
-            'label': row.get('label', ''),
-            'diagnostic_superclass': row.get('diagnostic_superclass', '')
+            'label': raw_label,
+            'grouped_label': group
         }
         filtered_rows.append(new_row)
         

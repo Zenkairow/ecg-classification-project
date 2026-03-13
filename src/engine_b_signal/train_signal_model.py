@@ -119,28 +119,17 @@ class ECGSignalDataset(Dataset):
         return len(self.annotations)
 
     def __getitem__(self, index):
-        # 1. Get Filename 
+        # 1. Get Filename (signals are named sample_{ecg_id}.npy)
         row = self.annotations.iloc[index]
-        f_name = row.get('filename')
-        f_hr = row.get('filename_hr')
-        f_lr = row.get('filename_lr')
-        
-        base_name = None
-        if isinstance(f_hr, str) and len(f_hr) > 0 and str(f_hr).lower() != 'nan':
-            base_name = f_hr
-        elif isinstance(f_lr, str) and len(f_lr) > 0 and str(f_lr).lower() != 'nan':
-            base_name = f_lr
-        elif isinstance(f_name, str) and len(f_name) > 0 and str(f_name).lower() != 'nan':
-            base_name = str(f_name)
-            
-        if base_name is None:
-            base_name = ""
-            
-        base_name = os.path.basename(base_name)
-        if base_name.endswith('.png'):
-            base_name = base_name.replace('.png', '.npy')
-        elif not base_name.endswith('.npy'):
-            base_name = base_name + '.npy'
+        ecg_id = row.get('ecg_id')
+        if ecg_id is not None and not (isinstance(ecg_id, float) and pd.isna(ecg_id)):
+            base_name = f"sample_{int(ecg_id)}.npy"
+        else:
+            # Fallback to filename column if available
+            fname = row.get('filename', '')
+            base_name = str(fname) if not pd.isna(fname) else 'missing.npy'
+            if not base_name.endswith('.npy'):
+                base_name = base_name.replace('.png', '.npy') if base_name.endswith('.png') else base_name + '.npy'
             
         signal_path = os.path.join(self.root_dir, base_name)
         
@@ -225,25 +214,11 @@ def detect_sequence_length(root_dir, csv_path):
     
     for i in range(min(50, len(df))): # Try first 50 entries
         row = df.iloc[i]
-        f_name = row.get('filename')
-        f_hr = row.get('filename_hr')
-        f_lr = row.get('filename_lr')
-        
-        fname = None
-        if isinstance(f_hr, str) and len(f_hr) > 0 and str(f_hr).lower() != 'nan':
-            fname = f_hr
-        elif isinstance(f_lr, str) and len(f_lr) > 0 and str(f_lr).lower() != 'nan':
-            fname = f_lr
-        elif isinstance(f_name, str) and len(f_name) > 0 and str(f_name).lower() != 'nan':
-            fname = str(f_name)
-            
-        if fname is None:
+        ecg_id = row.get('ecg_id')
+        if ecg_id is None or (isinstance(ecg_id, float) and pd.isna(ecg_id)):
             continue
             
-        fname = os.path.basename(fname).replace('.png', '.npy')
-        if not fname.endswith('.npy'):
-            fname = fname + '.npy'
-            
+        fname = f"sample_{int(ecg_id)}.npy"
         fpath = os.path.join(root_dir, fname)
         if os.path.exists(fpath):
             try:

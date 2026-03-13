@@ -109,31 +109,14 @@ def prepare_visual_hierarchy():
             stats['Ignored'] += 1
             continue
         
-        # Check filename validity
-        f_name = row.get('filename')
-        f_hr = row.get('filename_hr')
-        f_lr = row.get('filename_lr')
-        
-        fname = None
-        if isinstance(f_hr, str) and len(f_hr) > 0 and str(f_hr).lower() != 'nan':
-            fname = f_hr
-        elif isinstance(f_lr, str) and len(f_lr) > 0 and str(f_lr).lower() != 'nan':
-            fname = f_lr
-        elif isinstance(f_name, str) and len(f_name) > 0 and str(f_name).lower() != 'nan':
-             fname = str(f_name)
-             
-        if not fname:
+        # Construct filename from ecg_id (images are named sample_{ecg_id}.png)
+        ecg_id = row.get('ecg_id')
+        if pd.isna(ecg_id):
             stats.setdefault('MissingFile', 0)
             stats['MissingFile'] += 1
             continue
             
-        fname = os.path.basename(fname)
-        if not fname.endswith('.png'):
-            fname = fname + '.png'
-        
-        # We don't check os.path.exists here anymore to allow generating the CSV 
-        # even if images are being downloaded or extracted later natively.
-        # img_path = os.path.join(DATA_DIR, fname)
+        fname = f"sample_{int(ecg_id)}.png"
         
         # Route
         if grouped in CLASS_0_RHYTHM:
