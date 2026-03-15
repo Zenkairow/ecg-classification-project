@@ -33,13 +33,28 @@ CLASS_TO_IDX = {cls_name: idx for idx, cls_name in enumerate(STRUCTURE_CLASSES)}
 
 class StructureDataset(Dataset):
     def __init__(self, df, root_dir, seq_len=5000, augment=False):
-        self.data_frame = df.reset_index(drop=True)
         self.root_dir = root_dir
         self.seq_len = seq_len
         self.augment = augment
-        self.labels = []
         
-        # Pre-process labels for sampler lookup if needed
+        # Pre-filter: remove rows whose signal files don't exist on disk
+        valid_rows = []
+        for idx, row in df.iterrows():
+            fname = self._resolve_filename(row)
+            fpath = os.path.join(root_dir, fname)
+            if not fpath.endswith('.npy'):
+                fpath += '.npy'
+            if os.path.exists(fpath):
+                valid_rows.append(idx)
+        
+        dropped = len(df) - len(valid_rows)
+        if dropped > 0:
+            print(f"  [StructureDataset] Dropped {dropped} rows with missing signal files")
+        
+        self.data_frame = df.loc[valid_rows].reset_index(drop=True)
+        
+        # Pre-process labels for sampler lookup
+        self.labels = []
         for idx, row in self.data_frame.iterrows():
              label_str = group_diagnostic_classes(str(row['label']))
              if label_str not in CLASS_TO_IDX:
@@ -52,6 +67,14 @@ class StructureDataset(Dataset):
                  
         self.labels = np.array(self.labels)
 
+    def _resolve_filename(self, row):
+        """Resolve the signal filename from a dataframe row."""
+        fname = str(row.get('filename', ''))
+        if pd.isna(fname) or fname == 'nan' or fname == '':
+            ecg_id = row.get('ecg_id', '')
+            fname = f"sample_{ecg_id}.npy"
+        return fname
+
     def __len__(self):
         return len(self.data_frame)
     
@@ -62,12 +85,7 @@ class StructureDataset(Dataset):
         row = self.data_frame.iloc[idx]
         
         # Load Signal — use 'filename' column (sample_{ecg_id}.npy)
-        fname = str(row.get('filename', ''))
-        if pd.isna(fname) or fname == 'nan' or fname == '':
-             # Fallback: construct from ecg_id
-             ecg_id = row.get('ecg_id', '')
-             fname = f"sample_{ecg_id}.npy"
-        
+        fname = self._resolve_filename(row)
         file_path = os.path.join(self.root_dir, fname)
         
         if not os.path.exists(file_path):
@@ -75,7 +93,11 @@ class StructureDataset(Dataset):
                   file_path += '.npy'
         
         if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Signal missing: {file_path}")
+            # Fallback: return zero signal instead of crashing
+            signal = np.zeros((12, self.seq_len), dtype=np.float32)
+            label_str = group_diagnostic_classes(str(row['label']))
+            label = CLASS_TO_IDX.get(label_str, 0)
+            return torch.tensor(signal, dtype=torch.float32), torch.tensor(label, dtype=torch.long)
             
         signal = np.load(file_path)
         
