@@ -1,0 +1,26 @@
+﻿--- CardioScan_Technical_Report.md
++++ CardioScan_Technical_Report.md
+@@ -101,6 +101,23 @@
+         *   **Contrast Enhancement**: Applies CLAHE (clipLimit=2.0) to normalize lighting and remove shadows from photos.
+         *   **Aspect-Safe Resizing**: Resizes the longest dimension and pads with white to maintain a 512x512 geometry without distortion.
+ 
++## 9. Phase 13: PTB-XL Full Scale Training (v3.0)
++**Goal**: Scale training to the 21.8k PTB-XL dataset and deploy Engine A and B.
++**Version**: v3.0
++**Date**: 2026-03-15 (UTC)
++**Author**: Antigravity & Ayush
++
++### Outcome & Artifacts
++- **Engine A (Visual Router)**: Re-trained ResNet-50 on generated 2D grid images (Rhythm vs Structure).
++  - **Validation Accuracy**: 75.02%
++  - **Metrics**: Excellent Structure recall (92% precision).
++  - **Artifact**: models/visual_router.pth
++
++- **Engine B (Signal Specialist)**: Scaled the SE-ResNet-34 (1D) model from 12 classes to the full 26-class PTB-XL taxonomy.
++  - **Validation Accuracy**: 67.28% (highly aggressive 26-class mapping).
++  - **Optimization**: Mixup+Smoothing pushed convergence to 90% Training Accuracy before plateauing.
++  - **Artifact**: models/checkpoint_latest.pth
++
+ ---
+ 
+ ## 🟡 Part 3: Research, Ensemble & Experimental Models

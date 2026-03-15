@@ -134,3 +134,13 @@ To improve UX and system efficiency. Expensive operations (Plotting, AI Inferenc
 Interface is now significantly more responsive. 3D visualizer interaction is smooth and no longer causes "flash-refresh" of the main report image.
 
 ---
+
+### 2026-03-15 08:41 UTC — PTB-XL v3.0 FULL SCALE TRAINING EXECUTION
+**Actor:** agent:Antigravity
+**Summary:** Executed full scale PTB-XL training for Engine A and Engine B on A100 MIG 2g.10gb
+**Details:** Fixed OpenCV DictValue bugs by downgrading to headless 4.8.0.76 then 4.10.0.84. Fixed container GPU allocation utilizing MIG-ee69cc01-37d5-5c21-bf6c-1f558cf2589c. Corrected dataset prep scripts to map PTB-XL ilename_hr to our synthetic sample_{ecg_id} filesystem structure. Ran 12.6k visual samples reaching 75.02% Val Acc. Ran 21.8k 1D signal samples on 26-class taxonomy reaching 67.28% Val Acc.
+**Artifacts / Files:**
+- models/visual_router.pth
+- models/checkpoint_latest.pth
+- .agent/pr/technical_report.patch (Proposed)
+**Follow-up:** Human review required for technical report update PR.
