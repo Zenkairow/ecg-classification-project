@@ -61,10 +61,12 @@ class StructureDataset(Dataset):
             
         row = self.data_frame.iloc[idx]
         
-        # Load Signal
-        fname = row.get('filename_hr')
+        # Load Signal — use 'filename' column (sample_{ecg_id}.npy)
+        fname = str(row.get('filename', ''))
         if pd.isna(fname) or fname == 'nan' or fname == '':
-             fname = str(row.get('filename_hr', ''))
+             # Fallback: construct from ecg_id
+             ecg_id = row.get('ecg_id', '')
+             fname = f"sample_{ecg_id}.npy"
         
         file_path = os.path.join(self.root_dir, fname)
         
@@ -127,8 +129,8 @@ def train_structure_specialist():
     
     sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
     
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=sampler, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=sampler, num_workers=0)
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
     
     # 2. Model
     model = SEResNet34(num_classes=len(STRUCTURE_CLASSES), input_channels=NUM_LEADS)

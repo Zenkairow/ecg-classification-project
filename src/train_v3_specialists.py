@@ -172,8 +172,8 @@ def train_v3_structure():
         replacement=True
     )
     
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=sampler, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=sampler, num_workers=0)
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
     
     # 2. Model — AdvancedCardiacNet
     model = AdvancedCardiacNet(num_classes=len(STRUCTURE_CLASSES), input_channels=NUM_LEADS)
