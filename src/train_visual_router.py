@@ -37,8 +37,8 @@ from src.engine_a_visual.train_visual_model import DATA_DIR as VISUAL_DATA_DIR
 from src.prepare_visual_hierarchy import group_visual_label, CLASS_0_RHYTHM, CLASS_1_STRUCTURE
 
 # Config
-BATCH_SIZE = 8
-IMAGE_SIZE = 512
+BATCH_SIZE = 4       # Halved to fit 1024x1024 in VRAM
+IMAGE_SIZE = 1024    # Doubled for maximum ECG grid detail
 LEARNING_RATE = 1e-4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -222,7 +222,7 @@ def train_visual(mode='router', epochs=20):
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
     
-    GRAD_ACCUM_STEPS = 4
+    GRAD_ACCUM_STEPS = 8  # Doubled from 4 to maintain Effective Batch Size = 32 with BATCH_SIZE=4
     print(f"Using Gradient Accumulation: {GRAD_ACCUM_STEPS} steps (Effective batch size = {BATCH_SIZE * GRAD_ACCUM_STEPS})")
     
     best_acc = 0.0
