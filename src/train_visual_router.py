@@ -43,22 +43,6 @@ LEARNING_RATE = 1e-4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-# =============================================================================
-# Focal Loss (Reusable)
-# =============================================================================
-
-class FocalLoss(nn.Module):
-    def __init__(self, gamma=2.0, weight=None):
-        super().__init__()
-        self.gamma = gamma
-        self.weight = weight
-
-    def forward(self, inputs, targets):
-        ce_loss = F.cross_entropy(inputs, targets, weight=self.weight, reduction='none')
-        pt = torch.exp(-ce_loss)
-        focal_loss = ((1 - pt) ** self.gamma) * ce_loss
-        return focal_loss.mean()
-
 
 # =============================================================================
 # Visual ECG Dataset with Smart Preprocessing
@@ -220,23 +204,27 @@ def train_visual(mode='router', epochs=20):
     train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, sampler=sampler, num_workers=0)
     val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
     
-    # Model: ResNet-50 (pretrained)
-    print(f"Initializing ResNet-50 with {num_classes} output classes...")
-    model = models.resnet50(weights='IMAGENET1K_V1')
-    num_ftrs = model.fc.in_features
-    model.fc = nn.Sequential(
-        nn.Dropout(0.3),
+    # Model: EfficientNet-B4 (pretrained)
+    print(f"Initializing EfficientNet-B4 with {num_classes} output classes...")
+    model = models.efficientnet_b4(weights=models.EfficientNet_B4_Weights.IMAGENET1K_V1)
+    num_ftrs = model.classifier[1].in_features
+    # Replace classifier head with dropout and linear layer
+    model.classifier[1] = nn.Sequential(
+        nn.Dropout(0.4),
         nn.Linear(num_ftrs, num_classes),
     )
     model = model.to(DEVICE)
     
-    # Loss: Focal Loss with class weights
+    # Loss: Cross Entropy with Label Smoothing (anti-overfitting)
     loss_weight = torch.tensor(class_weights_arr / class_weights_arr.sum() * num_classes, dtype=torch.float32).to(DEVICE)
-    criterion = FocalLoss(gamma=2.0, weight=loss_weight)
+    criterion = nn.CrossEntropyLoss(weight=loss_weight, label_smoothing=0.1)
     
     # Optimizer + Scheduler
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
+    
+    GRAD_ACCUM_STEPS = 4
+    print(f"Using Gradient Accumulation: {GRAD_ACCUM_STEPS} steps (Effective batch size = {BATCH_SIZE * GRAD_ACCUM_STEPS})")
     
     best_acc = 0.0
     
@@ -246,23 +234,27 @@ def train_visual(mode='router', epochs=20):
         all_preds = []
         all_labels = []
         
-        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}", leave=False)
-        for inputs, labels in pbar:
+        pbar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{epochs}", leave=False)
+        optimizer.zero_grad()
+        for step, (inputs, labels) in pbar:
             inputs, labels = inputs.to(DEVICE), labels.to(DEVICE)
             
-            optimizer.zero_grad()
             outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            
+            loss = criterion(outputs, labels) / GRAD_ACCUM_STEPS
             loss.backward()
-            optimizer.step()
-            train_loss += loss.item()
+            
+            if (step + 1) % GRAD_ACCUM_STEPS == 0 or (step + 1) == len(train_loader):
+                optimizer.step()
+                optimizer.zero_grad()
+                
+            train_loss += loss.item() * GRAD_ACCUM_STEPS
             
             _, predicted = torch.max(outputs.data, 1)
             all_preds.extend(predicted.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
         
-        scheduler.step()
+        # Scheduler steps on val_loss below
+
         
         avg_train_loss = train_loss / len(train_loader)
         train_acc = accuracy_score(all_labels, all_preds)
@@ -286,6 +278,7 @@ def train_visual(mode='router', epochs=20):
         
         avg_val_loss = val_loss / len(val_loader)
         val_acc = accuracy_score(val_labels_list, val_preds)
+        scheduler.step(avg_val_loss)
         
         print(f"Epoch {epoch+1:02d} | Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | "
               f"Train Acc: {train_acc:.2%} | Val Acc: {val_acc:.2%}")
