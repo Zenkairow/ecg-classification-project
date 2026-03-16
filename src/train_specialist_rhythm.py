@@ -2,7 +2,7 @@
 Engine B — L3 Rhythm Specialist Training
 =========================================
 Multi-class SE-ResNet-34 classifier for rhythm disorders on PTB-XL at 500Hz.
-Loss:       Focal Loss (gamma=2.0) with per-class inverse-frequency weights
+Loss:       CrossEntropyLoss (stable for imbalanced multi-class)
 Optimizer:  AdamW (weight_decay=1e-2)
 Scheduler:  ReduceLROnPlateau
 """
@@ -37,25 +37,11 @@ EPOCHS = 35
 LEARNING_RATE = 1e-4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Define Rhythm Classes Mapping
-RHYTHM_CLASSES = sorted(CLASS_0_RHYTHM)
+# Define Rhythm Classes Mapping — deduplicate ('DIG'/'Dig' are the same)
+RHYTHM_CLASSES = sorted(set(CLASS_0_RHYTHM))
 CLASS_TO_IDX = {cls_name: idx for idx, cls_name in enumerate(RHYTHM_CLASSES)}
 
 
-# =============================================================================
-# Focal Loss
-# =============================================================================
-class FocalLoss(nn.Module):
-    def __init__(self, gamma=2.0, weight=None):
-        super().__init__()
-        self.gamma = gamma
-        self.weight = weight
-
-    def forward(self, inputs, targets):
-        ce_loss = F.cross_entropy(inputs, targets, weight=self.weight, reduction='none')
-        pt = torch.exp(-ce_loss)
-        focal_loss = ((1 - pt) ** self.gamma) * ce_loss
-        return focal_loss.mean()
 
 
 # =============================================================================
@@ -189,12 +175,8 @@ def train_rhythm_specialist():
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Model Parameters: {total_params:,}")
 
-    # 3. Loss — Focal Loss with class weights
-    loss_weight = torch.tensor(
-        class_weights / class_weights.sum() * len(RHYTHM_CLASSES),
-        dtype=torch.float32
-    ).to(DEVICE)
-    criterion = FocalLoss(gamma=2.0, weight=loss_weight)
+    # 3. Loss — CrossEntropyLoss (stable for imbalanced multi-class)
+    criterion = nn.CrossEntropyLoss()
 
     # 4. Optimizer + Scheduler
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-2)
