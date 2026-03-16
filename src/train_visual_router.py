@@ -204,20 +204,19 @@ def train_visual(mode='router', epochs=20):
     train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, sampler=sampler, num_workers=0)
     val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
     
-    # Model: EfficientNet-B4 (pretrained)
-    print(f"Initializing EfficientNet-B4 with {num_classes} output classes...")
-    model = models.efficientnet_b4(weights=models.EfficientNet_B4_Weights.IMAGENET1K_V1)
-    num_ftrs = model.classifier[1].in_features
-    # Replace classifier head with dropout and linear layer
-    model.classifier[1] = nn.Sequential(
-        nn.Dropout(0.4),
+    # Model: ResNet-50 (pretrained)
+    print(f"Initializing ResNet-50 with {num_classes} output classes...")
+    model = models.resnet50(weights='IMAGENET1K_V1')
+    num_ftrs = model.fc.in_features
+    model.fc = nn.Sequential(
+        nn.Dropout(0.3),
         nn.Linear(num_ftrs, num_classes),
     )
     model = model.to(DEVICE)
     
-    # Loss: Cross Entropy with Label Smoothing (anti-overfitting)
+    # Loss: Cross Entropy without Label Smoothing (anti-overfitting via Dropout)
     loss_weight = torch.tensor(class_weights_arr / class_weights_arr.sum() * num_classes, dtype=torch.float32).to(DEVICE)
-    criterion = nn.CrossEntropyLoss(weight=loss_weight, label_smoothing=0.1)
+    criterion = nn.CrossEntropyLoss(weight=loss_weight)
     
     # Optimizer + Scheduler
     optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
