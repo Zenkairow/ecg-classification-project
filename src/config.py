@@ -24,9 +24,10 @@ V3_STRUCTURE_MODEL_PATH = "models/v3_specialist_structure.pth"
 VISUAL_ROUTER_DATA_PATH = "data/visual_router_dataset.csv"
 VISUAL_RHYTHM_DATA_PATH = "data/visual_rhythm_dataset.csv"
 VISUAL_STRUCTURE_DATA_PATH = "data/visual_structure_dataset.csv"
-VISUAL_ROUTER_MODEL_PATH = "models/experimental_visual_router.pth"
-VISUAL_RHYTHM_MODEL_PATH = "models/experimental_visual_rhythm.pth"
-VISUAL_STRUCTURE_MODEL_PATH = "models/experimental_visual_structure.pth"
+VISUAL_ROUTER_MODEL_PATH = "models/v3_visual_router_1024.pth"
+VISUAL_RHYTHM_MODEL_PATH = "models/v3_visual_rhythm_1024.pth"
+# Structure was already trained and saved as experimental, let's keep the naming convention clean for documentation
+VISUAL_STRUCTURE_MODEL_PATH = "models/v3_visual_structure_1024.pth"
 
 # --- Common ---
 SIGNAL_LENGTH = 5000
