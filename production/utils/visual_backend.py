@@ -17,11 +17,24 @@ class VisualPredictor:
         
         # Paths
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # production/
-        self.model_path = os.path.join(base_path, models_dir, "Engine_A_ResNet-50.pth")
-        self.csv_path = os.path.join(base_path, data_dir, "train_labels.csv")
+        self.router_path = os.path.join(base_path, models_dir, "prod_visual_router_v6.pth")
+        self.structure_path = os.path.join(base_path, models_dir, "prod_visual_structure_v6.pth")
+        self.rhythm_path = os.path.join(base_path, models_dir, "prod_visual_rhythm_v6.pth")
         
-        self.class_map = self._build_class_map()
-        self.model = self._load_model()
+        self.router_classes = {0: 'Rhythm', 1: 'Structure'}
+        
+        # Hardcoded Specialist Classes to match V3 training
+        self.structure_classes = {
+            0: 'IVCD', 1: 'Ischemia', 2: 'LBBB', 3: 'LNGQT', 4: 'Left_Hypertrophy',
+            5: 'MI_Anterior', 6: 'MI_Inferior', 7: 'MI_Lateral', 8: 'RBBB', 9: 'Right_Hypertrophy'
+        }
+        
+        self.rhythm_classes = {
+            0: 'AV_Block', 1: 'Atrial_Fibrillation', 2: 'DIG', 3: 'EL', 4: 'Fascicular_Block',
+            5: 'NDT', 6: 'PVC', 7: 'Paced', 8: 'SVT', 9: 'Sinus_Rhythm', 10: 'WPW'
+        }
+        
+        self._load_models()
         self.preprocessor = SmartImagePreprocessor()
         
     def _group_diagnostic_classes(self, label):
@@ -45,33 +58,26 @@ class VisualPredictor:
         if label == 'NORM': return 'NORM'
         return label
 
-    def _build_class_map(self):
-        # Hardcoded to match training configuration
-        # This removes dependency on external CSV file during inference
-        unique_labels = sorted([
-            'AV_Block', 'Atrial_Fibrillation', 'Fascicular_Block', 'IVCD', 'Ischemia', 
-            'LBBB', 'Left_Hypertrophy', 'MI_Anterior', 'MI_Inferior', 'MI_Lateral', 
-            'NORM', 'Paced', 'RBBB', 'Right_Hypertrophy', 'SVT', 'Sinus_Rhythm'
-        ])
-        return {i: label for i, label in enumerate(unique_labels)}
-
-    def _load_model(self):
-        num_classes = len(self.class_map)
-        print(f"Visual Model: Loading ResNet50 with {num_classes} classes...")
-        
+    def _load_single_model(self, path, num_classes):
         model = models.resnet50(weights=None)
         num_ftrs = model.fc.in_features
-        model.fc = nn.Linear(num_ftrs, num_classes)
-        
-        if os.path.exists(self.model_path):
-            state_dict = torch.load(self.model_path, map_location=self.device)
-            # Handle strict=False in case of minor mismatches, but usually safe for full models
-            model.load_state_dict(state_dict, strict=False) 
+        model.fc = nn.Sequential(
+            nn.Dropout(0.3),
+            nn.Linear(num_ftrs, num_classes)
+        )
+        if os.path.exists(path):
+            state_dict = torch.load(path, map_location=self.device)
+            model.load_state_dict(state_dict, strict=False)
         else:
-            print(f"Warning: Visual Model not found at {self.model_path}")
-            
+            print(f"Warning: Visual Model not found at {path}")
         model.to(self.device).eval()
         return model
+
+    def _load_models(self):
+        print("Visual Hierarchy: Loading Router and Specialists...")
+        self.router = self._load_single_model(self.router_path, 2)
+        self.structure_net = self._load_single_model(self.structure_path, 10)
+        self.rhythm_net = self._load_single_model(self.rhythm_path, 11)
 
     def predict(self, image_input, patient_metadata=None):
         """
@@ -136,19 +142,37 @@ class VisualPredictor:
             tensor = transform(pil_image).unsqueeze(0).to(self.device)
             
             with torch.no_grad():
-                outputs = self.model(tensor)
-                probs = torch.softmax(outputs, dim=1)
-                conf, idx = torch.max(probs, 1)
+                # L2: Router
+                router_out = self.router(tensor)
+                router_probs = torch.softmax(router_out, dim=1)
+                router_conf, router_idx = torch.max(router_probs, 1)
+                domain = self.router_classes[router_idx.item()]
                 
-            label = self.class_map.get(idx.item(), "Unknown")
+                # L3: Specialist
+                if domain == 'Structure':
+                    spec_out = self.structure_net(tensor)
+                    class_map = self.structure_classes
+                else:
+                    spec_out = self.rhythm_net(tensor)
+                    class_map = self.rhythm_classes
+                    
+                spec_probs = torch.softmax(spec_out, dim=1)
+                spec_conf, spec_idx = torch.max(spec_probs, 1)
+                
+            label = class_map.get(spec_idx.item(), "Unknown")
             
-            # Top 3
-            top3_prob, top3_idx = torch.topk(probs, 3)
-            top3 = {self.class_map[i.item()]: p.item() for i, p in zip(top3_idx[0], top3_prob[0])}
+            # Top 3 from the chosen specialist
+            top3_prob, top3_idx = torch.topk(spec_probs, min(3, len(class_map)))
+            top3 = {class_map[i.item()]: p.item() for i, p in zip(top3_idx[0], top3_prob[0])}
+            
+            # Combine confidence (Router Confidence * Specialist Confidence)
+            overall_confidence = router_conf.item() * spec_conf.item()
             
             return {
                 "diagnosis": label,
-                "confidence": conf.item(),
+                "confidence": overall_confidence,
+                "domain": domain,
+                "domain_confidence": router_conf.item(),
                 "top3": top3,
                 "saved_files": save_paths
             }

@@ -48,9 +48,9 @@ class CardiacPredictor:
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # production/
         models_path = os.path.join(base_path, models_dir)
         
-        self.router_path = os.path.join(models_path, "hierarchy_stage2_router.pth")
-        self.rhythm_path = os.path.join(models_path, "hierarchy_stage3_rhythm.pth")
-        self.structure_path = os.path.join(models_path, "hierarchy_stage3_structure.pth")
+        self.router_path = os.path.join(models_path, "prod_signal_router_v6.pth")
+        self.rhythm_path = os.path.join(models_path, "prod_signal_rhythm_v6.pth")
+        self.structure_path = os.path.join(models_path, "prod_signal_structure_v6.pth")
         
         self._load_models()
 
