@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torchvision import models, transforms
 from PIL import Image
+import numpy as np
 import pandas as pd
 import os
 import sys
@@ -16,10 +17,10 @@ class VisualPredictor:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Paths
-        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # production/
-        self.router_path = os.path.join(base_path, models_dir, "prod_visual_router_v6.pth")
-        self.structure_path = os.path.join(base_path, models_dir, "prod_visual_structure_v6.pth")
-        self.rhythm_path = os.path.join(base_path, models_dir, "prod_visual_rhythm_v6.pth")
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # project root
+        self.router_path = os.path.join(project_root, models_dir, "prod_visual_router_v6.pth")
+        self.structure_path = os.path.join(project_root, models_dir, "prod_visual_structure_v6.pth")
+        self.rhythm_path = os.path.join(project_root, models_dir, "prod_visual_rhythm_v6.pth")
         
         self.router_classes = {0: 'Rhythm', 1: 'Structure'}
         
@@ -79,20 +80,36 @@ class VisualPredictor:
         self.structure_net = self._load_single_model(self.structure_path, 10)
         self.rhythm_net = self._load_single_model(self.rhythm_path, 11)
 
-    def predict(self, image_input, patient_metadata=None):
+    # -- MC-Dropout Utilities ------------------------------------------------
+    @staticmethod
+    def _enable_mc_dropout(model):
+        """Force Dropout layers to remain active during inference."""
+        for m in model.modules():
+            if isinstance(m, nn.Dropout):
+                m.train()
+
+    @staticmethod
+    def _disable_mc_dropout(model):
+        """Restore all Dropout layers to eval mode."""
+        for m in model.modules():
+            if isinstance(m, nn.Dropout):
+                m.eval()
+
+    def predict(self, image_input, patient_metadata=None, uncertainty_mode=False, mc_samples=50, alpha=0.1):
         """
         image_input: PIL Image or path
         patient_metadata: dict with keys 'name', 'age', 'gender' (Optional)
+        uncertainty_mode: If True, enable MC-Dropout Conformal Prediction.
+        mc_samples: Number of stochastic forward passes (T). Default: 50.
+        alpha: Significance level for prediction set. Default: 0.1 (90% coverage).
         """
-        # Pipeline: Smart Preprocess -> Tensor Norm
         transform = transforms.Compose([
-            transforms.ToTensor(), # Standardizes to [0,1], CHW
+            transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
         
         try:
             # --- DATA MANAGEMENT ---
-            # 0. Generate Filename if metadata provided
             save_paths = {}
             if patient_metadata:
                 import time
@@ -100,82 +117,123 @@ class VisualPredictor:
                 sanitized_name = str(patient_metadata.get('name', 'Anonymous')).replace(" ", "_")
                 age = str(patient_metadata.get('age', 'NA'))
                 gender = str(patient_metadata.get('gender', 'NA'))
-                
-                # Format: Name_Age_Gender_Timestamp.png
                 base_filename = f"{sanitized_name}_{age}_{gender}_{timestamp}"
                 
-                # Define Paths
-                base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # production/
-                raw_dir = os.path.join(base_path, "data", "engine_a", "patient_raw")
-                pre_dir = os.path.join(base_path, "data", "engine_a", "raw_preprocessed")
-                
-                # Ensure directories exist (redundancy check)
+                prod_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                raw_dir = os.path.join(prod_path, "data", "engine_a", "patient_raw")
+                pre_dir = os.path.join(prod_path, "data", "engine_a", "raw_preprocessed")
                 os.makedirs(raw_dir, exist_ok=True)
                 os.makedirs(pre_dir, exist_ok=True)
                 
                 save_paths['raw'] = os.path.join(raw_dir, f"{base_filename}_raw.png")
                 save_paths['pre'] = os.path.join(pre_dir, f"{base_filename}_processed.png")
 
-                # Save RAW Upload
                 if isinstance(image_input, str):
-                    # It's a path, just copy or open-save
                     try:
                         Image.open(image_input).save(save_paths['raw'])
                     except: 
-                        pass # Best effort
+                        pass
                 elif isinstance(image_input, Image.Image):
                     image_input.save(save_paths['raw'])
             
-            # 1. Smart Preprocessing (Crop -> Enhance -> Resize/Pad)
-            # We match the IMAGE_SIZE constant (512) for the model
+            # 1. Smart Preprocessing
             processed_numpy = self.preprocessor.process(image_input, target_size=IMAGE_SIZE)
             
-            # Save PROCESSED Image
             if 'pre' in save_paths:
-                # processed_numpy is RGB, convert to BGR for cv2 or just use PIL
                 Image.fromarray(processed_numpy).save(save_paths['pre'])
 
-            # 2. Convert to PIL for Transforms (or use directly if tensor supports it)
-            # processed_numpy is RGB uint8
             pil_image = Image.fromarray(processed_numpy)
-             
             tensor = transform(pil_image).unsqueeze(0).to(self.device)
             
             with torch.no_grad():
-                # L2: Router
+                # L2: Router (always deterministic)
                 router_out = self.router(tensor)
                 router_probs = torch.softmax(router_out, dim=1)
                 router_conf, router_idx = torch.max(router_probs, 1)
                 domain = self.router_classes[router_idx.item()]
                 
-                # L3: Specialist
+                # Select specialist
                 if domain == 'Structure':
-                    spec_out = self.structure_net(tensor)
+                    specialist = self.structure_net
                     class_map = self.structure_classes
                 else:
-                    spec_out = self.rhythm_net(tensor)
+                    specialist = self.rhythm_net
                     class_map = self.rhythm_classes
-                    
-                spec_probs = torch.softmax(spec_out, dim=1)
-                spec_conf, spec_idx = torch.max(spec_probs, 1)
                 
-            label = class_map.get(spec_idx.item(), "Unknown")
-            
-            # Top 3 from the chosen specialist
-            top3_prob, top3_idx = torch.topk(spec_probs, min(3, len(class_map)))
-            top3 = {class_map[i.item()]: p.item() for i, p in zip(top3_idx[0], top3_prob[0])}
-            
-            # Combine confidence (Router Confidence * Specialist Confidence)
-            overall_confidence = router_conf.item() * spec_conf.item()
-            
-            return {
-                "diagnosis": label,
-                "confidence": overall_confidence,
-                "domain": domain,
-                "domain_confidence": router_conf.item(),
-                "top3": top3,
-                "saved_files": save_paths
-            }
+                if uncertainty_mode:
+                    # --- MC-Dropout Conformal Prediction ---
+                    self._enable_mc_dropout(specialist)
+                    
+                    mc_probs_list = []
+                    for _ in range(mc_samples):
+                        spec_out = specialist(tensor)
+                        spec_probs = torch.softmax(spec_out, dim=1)
+                        mc_probs_list.append(spec_probs.cpu().numpy()[0])
+                    
+                    self._disable_mc_dropout(specialist)
+                    
+                    mc_probs = np.array(mc_probs_list)  # [T, C]
+                    mean_probs = mc_probs.mean(axis=0)
+                    var_probs = mc_probs.var(axis=0)
+                    epistemic_uncertainty = float(var_probs.mean())
+                    
+                    top1_idx = int(np.argmax(mean_probs))
+                    label = class_map.get(top1_idx, "Unknown")
+                    spec_conf = float(mean_probs[top1_idx])
+                    overall_confidence = router_conf.item() * spec_conf
+                    
+                    # Conformal Prediction Set
+                    prediction_set = []
+                    for i, p in enumerate(mean_probs):
+                        if p >= alpha:
+                            prediction_set.append({
+                                "class": class_map.get(i, f"Class_{i}"),
+                                "mean_prob": float(p),
+                                "variance": float(var_probs[i]),
+                                "std": float(np.sqrt(var_probs[i])),
+                            })
+                    prediction_set.sort(key=lambda x: x["mean_prob"], reverse=True)
+                    
+                    top3_indices = np.argsort(mean_probs)[::-1][:min(3, len(class_map))]
+                    top3 = {class_map.get(i, f"Class_{i}"): float(mean_probs[i]) for i in top3_indices}
+                    
+                    return {
+                        "diagnosis": label,
+                        "confidence": overall_confidence,
+                        "domain": domain,
+                        "domain_confidence": router_conf.item(),
+                        "top3": top3,
+                        "saved_files": save_paths,
+                        # -- Uncertainty Extension --
+                        "uncertainty_mode": True,
+                        "mc_samples": mc_samples,
+                        "alpha": alpha,
+                        "prediction_set": prediction_set,
+                        "prediction_set_labels": [p["class"] for p in prediction_set],
+                        "epistemic_uncertainty": epistemic_uncertainty,
+                        "mean_probs": {class_map.get(i, f"Class_{i}"): float(mean_probs[i]) for i in range(len(class_map))},
+                        "variance": {class_map.get(i, f"Class_{i}"): float(var_probs[i]) for i in range(len(class_map))},
+                    }
+                    
+                else:
+                    # --- Standard Deterministic Inference (Original) ---
+                    spec_out = specialist(tensor)
+                    spec_probs = torch.softmax(spec_out, dim=1)
+                    spec_conf, spec_idx = torch.max(spec_probs, 1)
+                    
+                    label = class_map.get(spec_idx.item(), "Unknown")
+                    top3_prob, top3_idx = torch.topk(spec_probs, min(3, len(class_map)))
+                    top3 = {class_map[i.item()]: p.item() for i, p in zip(top3_idx[0], top3_prob[0])}
+                    overall_confidence = router_conf.item() * spec_conf.item()
+                    
+                    return {
+                        "diagnosis": label,
+                        "confidence": overall_confidence,
+                        "domain": domain,
+                        "domain_confidence": router_conf.item(),
+                        "top3": top3,
+                        "saved_files": save_paths
+                    }
             
         except Exception as e:
             return {"error": str(e)}
