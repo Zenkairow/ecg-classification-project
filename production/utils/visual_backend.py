@@ -95,7 +95,55 @@ class VisualPredictor:
             if isinstance(m, nn.Dropout):
                 m.eval()
 
-    def predict(self, image_input, patient_metadata=None, uncertainty_mode=False, mc_samples=50, alpha=0.1):
+    def extract_features_for_fusion(self, image_input, patient_metadata=None):
+        """
+        Runs the visual router and extracts 2048-D penultimate features.
+        Used for Cross-Modal Attention Fusion (CMAF).
+        """
+        import torchvision.transforms as transforms
+        from PIL import Image
+        
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+        
+        try:
+            processed_numpy = self.preprocessor.process(image_input, target_size=IMAGE_SIZE)
+            pil_image = Image.fromarray(processed_numpy)
+            tensor = transform(pil_image).unsqueeze(0).to(self.device)
+            
+            with torch.no_grad():
+                # Router
+                router_out = self.router(tensor)
+                router_conf, router_idx = torch.max(torch.softmax(router_out, dim=1), 1)
+                domain = self.router_classes[router_idx.item()]
+                
+                if domain == 'Structure':
+                    specialist = self.structure_net
+                    class_map = self.structure_classes
+                else:
+                    specialist = self.rhythm_net
+                    class_map = self.rhythm_classes
+                
+                # Extract features from ResNet-50 before fc
+                x = specialist.conv1(tensor)
+                x = specialist.bn1(x)
+                x = specialist.relu(x)
+                x = specialist.maxpool(x)
+                x = specialist.layer1(x)
+                x = specialist.layer2(x)
+                x = specialist.layer3(x)
+                x = specialist.layer4(x)
+                x = specialist.avgpool(x)
+                features = torch.flatten(x, 1) # [B, 2048]
+                
+            return features, domain, class_map, specialist
+
+        except Exception as e:
+            return None, str(e), None, None
+
+    def predict(self, image_input, patient_metadata=None, uncertainty_mode=False, mc_samples=50, alpha=0.1, save_paths=None):
         """
         image_input: PIL Image or path
         patient_metadata: dict with keys 'name', 'age', 'gender' (Optional)

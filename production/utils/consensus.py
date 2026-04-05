@@ -23,6 +23,11 @@ sys.path.append(production_dir)
 
 from utils.backend import CardiacPredictor
 from utils.visual_backend import VisualPredictor
+try:
+    from utils.cross_modal_fusion import CrossModalAttentionFusion, FusedClassificationHead
+    CMAF_AVAILABLE = True
+except ImportError:
+    CMAF_AVAILABLE = False
 
 
 class CardiacSystem:
@@ -46,6 +51,9 @@ class CardiacSystem:
             models_dir: Relative path to models directory from production root.
             data_dir: Relative path to data directory from production root.
         """
+        import torch
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
         print("=" * 60)
         print("Initializing CardiacSystem V3.5 — Dual Hierarchy + Conformal")
         print("=" * 60)
@@ -69,6 +77,29 @@ class CardiacSystem:
             self.visual_engine = None
             self.visual_available = False
             print(f"⚠️  Engine A (Visual) — Offline: {e}")
+            
+        # ── CMAF Initialization ──
+        if CMAF_AVAILABLE:
+            try:
+                # We initialize CMAF heads if modules are imported successfully
+                self.cmaf = CrossModalAttentionFusion(
+                    dim_signal=512, dim_visual=2048, d_model=256, num_heads=8, dropout=0.1
+                ).to(self.device)
+                
+                # Fused output heads mapping to taxonomy
+                self.fused_signal_rhythm = FusedClassificationHead(512, 13).to(self.device)
+                self.fused_signal_structure = FusedClassificationHead(512, 11).to(self.device)
+                self.fused_visual_rhythm = FusedClassificationHead(2048, 13).to(self.device)
+                self.fused_visual_structure = FusedClassificationHead(2048, 11).to(self.device)
+                
+                self.fusion_available = True
+                print("✅ Engine C (CMAF Fusion) — Online")
+            except Exception as e:
+                self.fusion_available = False
+                print(f"⚠️  Engine C (CMAF Fusion) — Initialization Error: {e}")
+        else:
+            self.fusion_available = False
+            print("⚠️  Engine C (CMAF Fusion) — Offline (Module Missing)")
         
         print("=" * 60)
     
@@ -265,3 +296,69 @@ class CardiacSystem:
                 result["consensus_diagnosis"] = conformal["consensus_diagnosis"]
         
         return result
+
+    # ── CMAF Inference Pipeline (Phase 7 R&D) ──────────────────────
+    def predict_fusion(self, signal_numpy, image_input, patient_metadata=None):
+        """
+        Executes the Cross-Modal Attention Fusion pipeline.
+        Requires both Signal and Visual modalities to be present.
+        
+        1. Extracts penultimate features.
+        2. Applies bidrectional cross-attention (CMAF).
+        3. Classifies via fused classification heads.
+        """
+        import torch
+        
+        if not self.fusion_available or not self.signal_available or not self.visual_available:
+            return {"error": "Full system (Signal, Visual, Fusion) not available for CMAF."}
+            
+        # 1. Feature Extraction
+        h_s, domain_s, classes_s, mod_s = self.signal_engine.extract_features_for_fusion(signal_numpy)
+        h_v, domain_v, classes_v, mod_v = self.visual_engine.extract_features_for_fusion(image_input)
+        
+        if not h_s is not None or not h_v is not None:
+            return {"error": "Failed to extract features from one or both engines."}
+            
+        # Ensure domains match (CMAF works best when evaluating the same taxonomy)
+        if domain_s != domain_v:
+            return {
+                "error": "Domain mismatch", 
+                "signal_domain": domain_s, 
+                "visual_domain": domain_v,
+                "message": "Signal router and Visual router selected different pathological paths. CMAF aborted."
+            }
+            
+        # 2. Cross-Modal Attention Fusion
+        with torch.no_grad():
+            fused_s, fused_v, attn_weights = self.cmaf(h_s, h_v)
+            
+            # 3. Fused Classification Heads
+            if domain_s == "Rhythm":
+                logits_s = self.fused_signal_rhythm(fused_s)
+                logits_v = self.fused_visual_rhythm(fused_v)
+                class_names = classes_s
+            else:
+                logits_s = self.fused_signal_structure(fused_s)
+                logits_v = self.fused_visual_structure(fused_v)
+                class_names = classes_s
+                
+            probs_s = torch.softmax(logits_s, dim=1).cpu().numpy()[0]
+            probs_v = torch.softmax(logits_v, dim=1).cpu().numpy()[0]
+            
+            # Simple average ensemble for final consensus probability
+            fused_probs = (probs_s + probs_v) / 2.0
+            
+            top1_idx = int(fused_probs.argmax())
+            diagnosis = class_names[top1_idx]
+            confidence = float(fused_probs[top1_idx])
+            
+            return {
+                "diagnosis": diagnosis,
+                "confidence": confidence,
+                "domain": domain_s,
+                "signal_probs": {class_names[i]: float(probs_s[i]) for i in range(len(class_names))},
+                "visual_probs": {class_names[i]: float(probs_v[i]) for i in range(len(class_names))},
+                "fused_probs": {class_names[i]: float(fused_probs[i]) for i in range(len(class_names))},
+                "attention_gate_signal": attn_weights["gate_signal"],
+                "attention_gate_visual": attn_weights["gate_visual"]
+            }

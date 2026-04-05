@@ -115,6 +115,37 @@ class CardiacPredictor:
             
         return signal.to(self.device)
 
+    def extract_features_for_fusion(self, signal_numpy):
+        """
+        Runs the router and extracts intermediate features from the specialist.
+        Used for Cross-Modal Attention Fusion (CMAF).
+        
+        Returns:
+            features: [B, 512] tensor
+            path_name: "Rhythm" or "Structure"
+            class_names: List of target classes for the chosen path
+            specialist: The chosen specialist model (for classification head)
+        """
+        input_tensor = self.preprocess(signal_numpy)
+        with torch.no_grad():
+            # Router
+            router_logits = self.router(input_tensor)
+            router_pred = torch.argmax(router_logits, dim=1).item()
+            
+            if router_pred == 0:
+                path_name = "Rhythm"
+                specialist = self.rhythm_net
+                class_names = RHYTHM_CLASSES
+            else:
+                path_name = "Structure"
+                specialist = self.structure_net
+                class_names = STRUCTURE_CLASSES
+                
+            # Extract penultimate features [B, 512]
+            features = specialist.extract_features(input_tensor)
+            
+        return features, path_name, class_names, specialist
+
     def predict(self, signal_numpy, uncertainty_mode=False, mc_samples=50, alpha=0.1):
         """
         Hierarchical Inference Strategy:
