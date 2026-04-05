@@ -102,3 +102,40 @@ class SEResNet34(nn.Module):
         x = self.fc(x)
 
         return x
+
+    def extract_features(self, x):
+        """
+        Run backbone only — returns 512-D penultimate feature vector.
+        Stops before the final classification layer (fc).
+        
+        Args:
+            x: Input tensor [B, 12, 5000]
+            
+        Returns:
+            features: [B, 512] penultimate feature vector
+        """
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)  # [B, 512]
+        return x
+
+    def classify(self, features):
+        """
+        Run only the final classification head on pre-extracted features.
+        
+        Args:
+            features: [B, 512] feature vector (from extract_features or CMAF)
+            
+        Returns:
+            logits: [B, num_classes]
+        """
+        return self.fc(features)
